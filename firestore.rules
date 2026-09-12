@@ -1,0 +1,44 @@
+rules_version = '2';
+
+// Regras do Firestore para o painel de organogramas.
+//
+// IMPORTANTE — leia antes de publicar:
+// Este projeto não usa nenhum login (Firebase Authentication). As regras
+// abaixo liberam leitura e escrita da coleção "orgCharts" para qualquer
+// pessoa que tenha a URL do site publicado no GitHub Pages. Isso é aceitável
+// para uma ferramenta interna, de acesso restrito/não divulgado, mas significa
+// que qualquer pessoa com o link poderia editar ou apagar os organogramas.
+//
+// Se isso for um problema, a forma mais simples de reforçar é:
+//   1. Ativar "Firebase Authentication" (por exemplo, login por e-mail/senha
+//      ou Google) no Firebase Console;
+//   2. Trocar as condições abaixo de "true" para "request.auth != null";
+//   3. Adicionar uma tela de login simples ao index.html.
+// Isso não está implementado nesta versão para manter o painel simples de
+// usar, mas o caminho fica pronto para quando for necessário.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /orgCharts/{chartId} {
+      // Leitura liberada: qualquer um com o link pode ver os organogramas.
+      allow read: if true;
+
+      // Escrita liberada, mas validando o formato mínimo esperado do
+      // documento, para evitar gravações acidentais de lixo/estruturas
+      // completamente diferentes do que o painel espera.
+      allow create, update: if true
+        && request.resource.data.keys().hasAll(['id', 'name', 'root'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string
+        && request.resource.data.root is map;
+
+      allow delete: if true;
+    }
+
+    // Qualquer outra coleção/documento fica bloqueado por padrão.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
