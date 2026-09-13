@@ -141,6 +141,26 @@
       word-break: normal;
     }
 
+    /* Tela "Ajustar Layout": cartões soltos, posicionados livremente e
+       arrastáveis, sem a estrutura de árvore (<ul>/<li>) da tela principal. */
+    #layout-canvas .layout-node-card {
+      position: absolute;
+      box-sizing: border-box;
+      cursor: grab;
+      user-select: none;
+      z-index: 2;
+    }
+    #layout-canvas .layout-node-card.dragging {
+      cursor: grabbing;
+      z-index: 50;
+      box-shadow: 0 12px 28px rgba(15, 23, 42, .28) !important;
+    }
+    #layout-canvas-connectors path {
+      fill: none;
+      stroke: #94a3b8;
+      stroke-width: 2;
+    }
+
     /* Última camada em modo vertical: em vez da fileira horizontal padrão,
        empilha os cartões em coluna, ligados por uma "espinha" vertical com um
        traço curto até cada cartão — visual parecido com as unidades de
@@ -812,6 +832,38 @@
 </head>
 <body class="bg-slate-100 text-slate-800">
 
+  <!-- ==================== AJUSTAR LAYOUT (posições manuais) ==================== -->
+  <div id="layout-adjust-screen" class="fixed inset-0 z-50 bg-slate-100 hidden flex-col no-print">
+    <header class="bg-white border-b border-slate-200 px-6 py-3 flex items-center justify-between shadow-sm gap-4">
+      <div class="flex items-center gap-4 min-w-0">
+        <button onclick="closeLayoutAdjustScreen()" class="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 p-2 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium shrink-0">
+          <i class="fa-solid fa-arrow-left"></i> Voltar
+        </button>
+        <div class="h-6 w-px bg-slate-300 shrink-0"></div>
+        <div class="min-w-0">
+          <h1 class="font-bold text-slate-800 text-base leading-tight">Ajustar Layout</h1>
+          <p class="text-[11px] text-slate-500 truncate">Arraste as caixas para reposicioná-las. A estrutura e os vínculos não podem ser alterados aqui.</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <button id="layout-undo-btn" onclick="layoutUndo()" disabled class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Desfazer">
+          <i class="fa-solid fa-rotate-left"></i><span class="hidden sm:inline">Desfazer</span>
+        </button>
+        <button id="layout-redo-btn" onclick="layoutRedo()" disabled class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Refazer">
+          <i class="fa-solid fa-rotate-right"></i><span class="hidden sm:inline">Refazer</span>
+        </button>
+        <button onclick="layoutResetPositions()" class="bg-white border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Restaurar as posições originais">
+          <i class="fa-solid fa-arrow-rotate-left text-rose-500"></i><span class="hidden sm:inline">Resetar posições</span>
+        </button>
+      </div>
+    </header>
+    <div id="layout-canvas-viewport" class="flex-1 relative overflow-auto bg-slate-100 bg-grid-pattern">
+      <div id="layout-canvas" style="position:relative; min-width:100%; min-height:100%;">
+        <svg id="layout-canvas-connectors" style="position:absolute; top:0; left:0; pointer-events:none;"></svg>
+      </div>
+    </div>
+  </div>
+
   <!-- ==================== HOME DASHBOARD ==================== -->
   <div id="home-dashboard" class="fixed inset-0 z-50 bg-slate-50 overflow-y-auto flex flex-col no-print">
     <header class="bg-indigo-700 text-white px-8 py-6 shadow-md flex items-center justify-between">
@@ -1148,11 +1200,8 @@
             <i class="fa-solid fa-rotate-right text-xs"></i>
           </button>
         </div>
-        <button onclick="duplicateCurrentChart()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Duplicar este organograma">
-          <i class="fa-regular fa-copy text-indigo-600"></i><span class="hidden xl:inline">Duplicar</span>
-        </button>
-        <button onclick="startCropPrintMode()" class="bg-white border border-slate-300 hover:bg-amber-50 hover:border-amber-300 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Selecione com o mouse uma área do organograma para imprimir">
-          <i class="fa-solid fa-crop-simple text-amber-600"></i><span>Imprimir recorte</span>
+        <button onclick="openLayoutAdjustScreen()" class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Ajustar manualmente a posição das caixas, sem alterar a estrutura">
+          <i class="fa-solid fa-arrows-up-down-left-right text-indigo-600"></i><span class="hidden xl:inline">Ajustar Layout</span>
         </button>
         <div class="relative inline-block text-left group">
           <button class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors">
@@ -1160,8 +1209,9 @@
           </button>
           <div class="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-30 py-1">
             <button onclick="exportJSON()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2"><i class="fa-solid fa-file-code text-indigo-600"></i> Baixar JSON</button>
-            <button onclick="openPrintChoiceModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2"><i class="fa-solid fa-print text-emerald-600"></i> Gerar PDF</button>
-            <button onclick="openOptimizedPrintModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2" title="Imprime o organograma exatamente como está na tela, dividido em páginas se necessário"><i class="fa-solid fa-compress text-violet-600"></i> Imprimir/PDF</button>
+            <button onclick="openPrintChoiceModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2"><i class="fa-solid fa-compress text-emerald-600"></i> Gerar PDF</button>
+            <button onclick="openOptimizedPrintModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2" title="Imprime o organograma exatamente como está na tela, dividido em páginas se necessário"><i class="fa-solid fa-print text-violet-600"></i> Imprimir/PDF</button>
+            <button onclick="startCropPrintMode()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2" title="Selecione com o mouse uma área do organograma para imprimir"><i class="fa-solid fa-crop-simple text-amber-600"></i> Imprimir seleção</button>
           </div>
         </div>
       </div>
@@ -2876,6 +2926,9 @@
               ${buildFolderSelectHtml(chart)}
             </select>
             <div class="flex items-center gap-1 shrink-0">
+              <button onclick="event.stopPropagation(); openEditChartModal('${id}')" class="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 w-8 h-8 rounded flex items-center justify-center transition-colors" title="Editar título e subtítulo">
+                <i class="fa-solid fa-pen text-sm"></i>
+              </button>
               <button onclick="event.stopPropagation(); duplicateChart('${id}')" class="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 w-8 h-8 rounded flex items-center justify-center transition-colors" title="Duplicar organograma">
                 <i class="fa-regular fa-copy text-sm"></i>
               </button>
@@ -2954,32 +3007,46 @@
       }
     }
 
-    function openEditChartModal() {
-      if (!currentChartId || !chartsData[currentChartId]) return;
-      document.getElementById('edit-chart-title').value = chartsData[currentChartId].name || '';
-      document.getElementById('edit-chart-subtitle').value = chartsData[currentChartId].subtitle || '';
+    let _editChartTargetId = null;
+    function openEditChartModal(id) {
+      const targetId = id || currentChartId;
+      if (!targetId || !chartsData[targetId]) return;
+      _editChartTargetId = targetId;
+      document.getElementById('edit-chart-title').value = chartsData[targetId].name || '';
+      document.getElementById('edit-chart-subtitle').value = chartsData[targetId].subtitle || '';
       document.getElementById('edit-chart-modal').classList.remove('hidden');
       setTimeout(() => document.getElementById('edit-chart-title').focus(), 50);
     }
-    function closeEditChartModal() { document.getElementById('edit-chart-modal').classList.add('hidden'); }
+    function closeEditChartModal() {
+      document.getElementById('edit-chart-modal').classList.add('hidden');
+      _editChartTargetId = null;
+    }
     function handleEditChart(event) {
       event.preventDefault();
-      if (!currentChartId || !chartsData[currentChartId]) return;
+      const targetId = _editChartTargetId || currentChartId;
+      if (!targetId || !chartsData[targetId]) return;
       const title = document.getElementById('edit-chart-title').value.trim();
       const subtitle = document.getElementById('edit-chart-subtitle').value.trim();
       if (!title) return;
-      if (title === chartsData[currentChartId].name && subtitle === (chartsData[currentChartId].subtitle || '')) {
+      if (title === chartsData[targetId].name && subtitle === (chartsData[targetId].subtitle || '')) {
         closeEditChartModal();
         return;
       }
-      recordHistoryState();
-      chartsData[currentChartId].name = title;
-      chartsData[currentChartId].subtitle = subtitle;
-      document.getElementById('app-header-title').innerText = title;
-      document.getElementById('app-header-subtitle').innerText = subtitle;
-      document.getElementById('print-title-span').innerText = title;
-      document.getElementById('print-subtitle-span').innerText = subtitle;
-      saveData();
+      if (targetId === currentChartId) recordHistoryState();
+      chartsData[targetId].name = title;
+      chartsData[targetId].subtitle = subtitle;
+      chartsData[targetId].updatedAt = Date.now();
+      if (targetId === currentChartId) {
+        document.getElementById('app-header-title').innerText = title;
+        document.getElementById('app-header-subtitle').innerText = subtitle;
+        document.getElementById('print-title-span').innerText = title;
+        document.getElementById('print-subtitle-span').innerText = subtitle;
+        saveData();
+      } else {
+        persistLocalCache();
+        queueCloudSave(targetId);
+        renderDashboard();
+      }
       closeEditChartModal();
       showToast("Título e subtítulo atualizados!", "success");
     }
@@ -3012,6 +3079,238 @@
     }
     function duplicateCurrentChart() {
       if (currentChartId) duplicateChart(currentChartId, true);
+    }
+
+    /* --- AJUSTAR LAYOUT (posições manuais, sem alterar estrutura/vínculos) --- */
+    let layoutOverridesDraft = {};
+    let layoutHistory = [];
+    let layoutHistoryIndex = -1;
+    let layoutNodesFlat = [];
+
+    // Lê a posição NATURAL (calculada pela árvore de verdade, na tela
+    // principal) de cada cartão, mais nome/sigla/tipo/pai — a base sobre a
+    // qual as posições manuais (layoutOverrides) são aplicadas.
+    function buildLayoutFlatNodes() {
+      const root = document.getElementById('tree-root');
+      if (!root || !orgTree) return null;
+      const rootRect = root.getBoundingClientRect();
+      const z = zoomLevel || 1;
+      const cards = Array.from(root.querySelectorAll('.node-card'));
+      if (!cards.length) return null;
+      return cards.map(el => {
+        const r = el.getBoundingClientRect();
+        const id = el.id.replace(/^card-/, '');
+        const node = findNodeById(orgTree, id);
+        const parent = findParentNode(orgTree, id);
+        return {
+          id,
+          name: node?.name || 'Sem nome',
+          sigla: node?.sigla || '',
+          type: node?.type || 'linha',
+          parentId: parent ? parent.id : null,
+          x: (r.left - rootRect.left) / z,
+          y: (r.top - rootRect.top) / z,
+          w: r.width / z,
+          h: r.height / z
+        };
+      });
+    }
+
+    function getLayoutPosition(node) {
+      const override = layoutOverridesDraft[node.id];
+      return {
+        x: override ? override.x : node.x,
+        y: override ? override.y : node.y,
+        w: node.w,
+        h: node.h
+      };
+    }
+
+    function openLayoutAdjustScreen() {
+      if (!currentChartId || !orgTree) { showToast('Abra um organograma primeiro.', 'error'); return; }
+      const flat = buildLayoutFlatNodes();
+      if (!flat) { showToast('Não foi possível medir o organograma.', 'error'); return; }
+      layoutNodesFlat = flat;
+      layoutOverridesDraft = { ...(chartsData[currentChartId].layoutOverrides || {}) };
+      layoutHistory = [{ ...layoutOverridesDraft }];
+      layoutHistoryIndex = 0;
+      renderLayoutCanvas();
+      updateLayoutUndoRedoButtons();
+      const screen = document.getElementById('layout-adjust-screen');
+      screen.classList.remove('hidden');
+      screen.classList.add('flex');
+    }
+
+    function closeLayoutAdjustScreen() {
+      const screen = document.getElementById('layout-adjust-screen');
+      screen.classList.add('hidden');
+      screen.classList.remove('flex');
+    }
+
+    // Desenha (ou redesenha do zero) todos os cartões soltos + as linhas de
+    // conexão, a partir das posições atuais (naturais + overrides).
+    function renderLayoutCanvas() {
+      const canvas = document.getElementById('layout-canvas');
+      if (!canvas) return;
+      canvas.querySelectorAll('.layout-node-card').forEach(el => el.remove());
+
+      layoutNodesFlat.forEach(n => {
+        const pos = getLayoutPosition(n);
+        const el = document.createElement('div');
+        const typeClasses = n.type === 'assessoria'
+          ? 'border-l-[5px] border-purple-500 rounded-lg'
+          : 'border-t-[5px] border-blue-600 rounded-xl';
+        el.className = `layout-node-card node-card ${typeClasses} border-x border-b border-slate-200 bg-white shadow-md flex flex-col items-center justify-center text-center px-2 py-1.5`;
+        el.id = `layout-card-${n.id}`;
+        el.style.width = `${pos.w}px`;
+        el.style.height = `${pos.h}px`;
+        el.innerHTML = `
+          <div class="unit-name font-bold text-slate-800 text-xs">${escapeHtml(n.name)}</div>
+          ${n.sigla ? `<div class="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">${escapeHtml(n.sigla)}</div>` : ''}
+        `;
+        el.addEventListener('mousedown', (e) => startLayoutDrag(e, n.id));
+        canvas.appendChild(el);
+      });
+
+      updateLayoutPositionsOnly();
+    }
+
+    // Só reposiciona os cartões já existentes e redesenha as linhas — usado
+    // durante o arraste, para ficar fluido (sem recriar nada do zero).
+    function updateLayoutPositionsOnly() {
+      const viewport = document.getElementById('layout-canvas-viewport');
+      const canvas = document.getElementById('layout-canvas');
+      if (!viewport || !canvas) return;
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      layoutNodesFlat.forEach(n => {
+        const p = getLayoutPosition(n);
+        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
+      });
+      if (!isFinite(minX)) return;
+
+      const pad = 220; // espaço extra para arrastar caixas além dos limites naturais
+      const originX = Math.min(0, minX) - pad;
+      const originY = Math.min(0, minY) - pad;
+      const width = Math.max(viewport.clientWidth, maxX - originX + pad);
+      const height = Math.max(viewport.clientHeight, maxY - originY + pad);
+
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+
+      layoutNodesFlat.forEach(n => {
+        const el = document.getElementById(`layout-card-${n.id}`);
+        if (!el) return;
+        const pos = getLayoutPosition(n);
+        el.style.left = `${pos.x - originX}px`;
+        el.style.top = `${pos.y - originY}px`;
+      });
+
+      drawLayoutConnectors(originX, originY, width, height);
+    }
+
+    function drawLayoutConnectors(originX, originY, width, height) {
+      const svg = document.getElementById('layout-canvas-connectors');
+      if (!svg) return;
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      const byId = {};
+      layoutNodesFlat.forEach(n => { byId[n.id] = n; });
+
+      let paths = '';
+      layoutNodesFlat.forEach(n => {
+        const parent = n.parentId ? byId[n.parentId] : null;
+        if (!parent) return;
+        const p = getLayoutPosition(parent);
+        const c = getLayoutPosition(n);
+        const x1 = p.x - originX + p.w / 2;
+        const y1 = p.y - originY + p.h;
+        const x2 = c.x - originX + c.w / 2;
+        const y2 = c.y - originY;
+        const midY = (y1 + y2) / 2;
+        paths += `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}"/>`;
+      });
+      svg.innerHTML = paths;
+    }
+
+    function startLayoutDrag(e, nodeId) {
+      if (e.button !== undefined && e.button !== 0) return;
+      e.preventDefault();
+      const node = layoutNodesFlat.find(n => n.id === nodeId);
+      const el = document.getElementById(`layout-card-${nodeId}`);
+      if (!node || !el) return;
+      const startPos = getLayoutPosition(node);
+      const startMouseX = e.clientX;
+      const startMouseY = e.clientY;
+      el.classList.add('dragging');
+
+      function onMove(ev) {
+        const dx = ev.clientX - startMouseX;
+        const dy = ev.clientY - startMouseY;
+        layoutOverridesDraft[nodeId] = { x: startPos.x + dx, y: startPos.y + dy };
+        updateLayoutPositionsOnly();
+      }
+      function onUp() {
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        el.classList.remove('dragging');
+        commitLayoutChange();
+      }
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    }
+
+    function commitLayoutChange() {
+      layoutHistory = layoutHistory.slice(0, layoutHistoryIndex + 1);
+      layoutHistory.push({ ...layoutOverridesDraft });
+      layoutHistoryIndex = layoutHistory.length - 1;
+      updateLayoutUndoRedoButtons();
+      saveLayoutOverrides();
+    }
+
+    function layoutUndo() {
+      if (layoutHistoryIndex <= 0) return;
+      layoutHistoryIndex--;
+      layoutOverridesDraft = { ...layoutHistory[layoutHistoryIndex] };
+      updateLayoutPositionsOnly();
+      updateLayoutUndoRedoButtons();
+      saveLayoutOverrides();
+    }
+
+    function layoutRedo() {
+      if (layoutHistoryIndex >= layoutHistory.length - 1) return;
+      layoutHistoryIndex++;
+      layoutOverridesDraft = { ...layoutHistory[layoutHistoryIndex] };
+      updateLayoutPositionsOnly();
+      updateLayoutUndoRedoButtons();
+      saveLayoutOverrides();
+    }
+
+    function layoutResetPositions() {
+      if (!Object.keys(layoutOverridesDraft).length) { showToast('As posições já estão nos valores originais.', 'info'); return; }
+      if (!confirm('Restaurar todas as caixas para a posição original?')) return;
+      layoutOverridesDraft = {};
+      updateLayoutPositionsOnly();
+      commitLayoutChange();
+      showToast('Posições restauradas.', 'info');
+    }
+
+    function updateLayoutUndoRedoButtons() {
+      const undoBtn = document.getElementById('layout-undo-btn');
+      const redoBtn = document.getElementById('layout-redo-btn');
+      if (undoBtn) undoBtn.disabled = layoutHistoryIndex <= 0;
+      if (redoBtn) redoBtn.disabled = layoutHistoryIndex >= layoutHistory.length - 1;
+    }
+
+    function saveLayoutOverrides() {
+      if (!currentChartId || !chartsData[currentChartId]) return;
+      chartsData[currentChartId].layoutOverrides = { ...layoutOverridesDraft };
+      chartsData[currentChartId].updatedAt = Date.now();
+      persistLocalCache();
+      queueCloudSave(currentChartId);
     }
 
     /* --- APPLICATION RENDERER --- */
@@ -4042,9 +4341,19 @@
       const sourceLogos = standardHeader ? standardHeader.querySelectorAll('img') : [];
       const totalPages = tiles.length;
 
+      // Monta tudo fora do documento (num fragment) e insere de uma vez só
+      // no final — evita um reflow do navegador a cada página adicionada.
+      const fragment = document.createDocumentFragment();
+
       if (totalPages > 1) {
-        renderAssemblyMapPage(host, tiles, usedRows, usedCols, chart, sourceLogos);
+        renderAssemblyMapPage(fragment, tiles, usedRows, usedCols, chart, sourceLogos);
       }
+
+      // Serializa a árvore real UMA única vez e reaproveita essa string para
+      // instanciar cada página via innerHTML — bem mais rápido do que repetir
+      // root.cloneNode(true) (uma varredura profunda da árvore) uma vez por
+      // página em organogramas grandes com muitas folhas.
+      const treeHtml = root.outerHTML;
 
       tiles.forEach((tile, index) => {
         const { viewX, viewY, viewW, viewH, rowIndex, colIndex } = tile;
@@ -4083,7 +4392,7 @@
           sheet.appendChild(tag);
         }
 
-        // Cada página é uma "janela" recortada sobre um clone do organograma
+        // Cada página é uma "janela" recortada sobre uma cópia do organograma
         // real da tela — não um redesenho. Por isso a posição de cada caixa
         // fica idêntica à da tela; o único ajuste é a janela de recorte e a
         // sobreposição entre páginas vizinhas, para permitir montá-las depois.
@@ -4097,7 +4406,9 @@
         stage.style.left = `${-viewX}px`;
         stage.style.top = `${-viewY}px`;
 
-        const clone = root.cloneNode(true);
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = treeHtml;
+        const clone = wrapper.firstElementChild;
         clone.removeAttribute('id');
         clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
         clone.querySelectorAll('[draggable]').forEach(el => el.removeAttribute('draggable'));
@@ -4117,8 +4428,10 @@
         viewport.appendChild(stage);
         sheet.appendChild(viewport);
 
-        host.appendChild(sheet);
+        fragment.appendChild(sheet);
       });
+
+      host.appendChild(fragment);
 
       return { pages: totalPages };
     }
@@ -4383,12 +4696,15 @@
       requestAnimationFrame(() => {
         preparePrintDetails();
         prepareOptimizedPrint();
-        setTimeout(() => {
+        // Um segundo requestAnimationFrame garante que o navegador já pintou
+        // as páginas antes de chamar print() — mais rápido e mais confiável
+        // do que esperar um tempo fixo "no escuro".
+        requestAnimationFrame(() => {
           window.print();
           document.body.classList.remove('print-optimized');
           clearOptimizedPageSize();
           restoreCollapsedAfterOptimizedModal();
-        }, 220);
+        });
       });
     }
 
