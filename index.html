@@ -523,10 +523,15 @@
       }
 
       /* Borda simples nos cartões ao imprimir: tira a sombra de profundidade
-         (que não serve para nada no papel) e mantém só a borda colorida do
-         tipo da unidade + a borda cinza fina. */
+         (que não serve para nada no papel), o destaque colorido por tipo de
+         unidade (linha/assessoria) e usa uma única borda fina e neutra. */
       .node-card {
         box-shadow: none !important;
+        border-color: #94a3b8 !important;
+        border-top-width: 1px !important;
+        border-right-width: 1px !important;
+        border-bottom-width: 1px !important;
+        border-left-width: 1px !important;
       }
 
       .org-tree {
@@ -3767,7 +3772,7 @@
     // o navegador usa para @page/impressão, então o resultado impresso
     // corresponde fielmente às medidas físicas do papel escolhido.
     const PX_PER_MM = 96 / 25.4;
-    const PAGE_MARGIN_MM = 4; // deve bater com o @page { margin } usado na impressão
+    const PAGE_MARGIN_MM = 3; // deve bater com o @page { margin } usado na impressão
     const OPT_HEADER_HEIGHT_MM = 16; // altura aproximada do cabeçalho compacto
     const OPTIMIZED_PAPER_SIZES = {
       A4: { label: 'A4 (297 × 210 mm)', w: 297, h: 210 },
@@ -3857,9 +3862,15 @@
       return starts;
     }
 
-    function boxIntersectsTile(box, tile) {
-      return box.x < tile.viewX + tile.viewW && box.x + box.w > tile.viewX &&
-             box.y < tile.viewY + tile.viewH && box.y + box.h > tile.viewY;
+    // Só conta como "conteúdo real" numa página quando a MAIORIA do cartão
+    // (não só uma pontinha) está dentro da janela — evita páginas quase em
+    // branco, com apenas um canto de cartão ou só linhas de conexão passando
+    // por cima de espaço vazio.
+    function boxSubstantiallyInTile(box, tile, minFraction = 0.55) {
+      const overlapX = Math.min(box.x + box.w, tile.viewX + tile.viewW) - Math.max(box.x, tile.viewX);
+      const overlapY = Math.min(box.y + box.h, tile.viewY + tile.viewH) - Math.max(box.y, tile.viewY);
+      if (overlapX <= 0 || overlapY <= 0) return false;
+      return (overlapX / box.w) >= minFraction && (overlapY / box.h) >= minFraction;
     }
 
     // Reparte o organograma REAL da tela (sem recalcular posições, sem
@@ -3893,9 +3904,10 @@
           const viewW = Math.min(logicalViewW, width - x);
           const viewH = Math.min(rowH, height - y);
           const tile = { viewX: minX + x, viewY: minY + y, viewW, viewH, rowIndex, colIndex };
-          // Só gera a página se algum cartão realmente aparecer nela — evita
-          // folhas em branco em árvores com formato irregular.
-          if (boxes.some(b => boxIntersectsTile(b, tile))) tiles.push(tile);
+          // Só gera a página se a maior parte de algum cartão realmente
+          // aparecer nela — evita folhas em branco ou dominadas só por
+          // linhas de conexão, com pouco mais que uma pontinha de cartão.
+          if (boxes.some(b => boxSubstantiallyInTile(b, tile))) tiles.push(tile);
         });
       });
 
