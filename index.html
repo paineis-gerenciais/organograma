@@ -3772,7 +3772,7 @@
     // o navegador usa para @page/impressão, então o resultado impresso
     // corresponde fielmente às medidas físicas do papel escolhido.
     const PX_PER_MM = 96 / 25.4;
-    const PAGE_MARGIN_MM = 3; // deve bater com o @page { margin } usado na impressão
+    const PAGE_MARGIN_MM = 0.75; // deve bater com o @page { margin } usado na impressão
     const OPT_HEADER_HEIGHT_MM = 16; // altura aproximada do cabeçalho compacto
     const OPTIMIZED_PAPER_SIZES = {
       A4: { label: 'A4 (297 × 210 mm)', w: 297, h: 210 },
@@ -4115,8 +4115,8 @@
         });
         stage.appendChild(clone);
         viewport.appendChild(stage);
-
         sheet.appendChild(viewport);
+
         host.appendChild(sheet);
       });
 
@@ -4297,9 +4297,10 @@
       cropH = Math.min(root.offsetHeight - cropY, cropH);
       if (cropW <= 1 || cropH <= 1) return false;
 
-      const targetWidth = 1045;
-      const targetHeight = 645;
-      const scale = Math.max(0.25, Math.min(1.15, targetWidth / cropW, targetHeight / cropH));
+      // Imprime a seleção no tamanho exato — sem redimensionar para caber
+      // num formato de papel padrão. A folha é cortada sob medida para o
+      // recorte + o cabeçalho, em vez de forçar um encaixe em A4.
+      const scale = 1;
 
       const standardHeader = document.getElementById('print-header');
       const sourceLogos = standardHeader ? standardHeader.querySelectorAll('img') : [];
@@ -4317,7 +4318,15 @@
       clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
       clone.querySelectorAll('[draggable]').forEach(el => el.removeAttribute('draggable'));
       clone.querySelectorAll('button').forEach(el => el.remove());
-      clone.querySelectorAll('.drag-over,.dragging').forEach(el => el.classList.remove('drag-over','dragging'));
+      // Remove estados visuais interativos (seleção, busca, hover) que
+      // deslocariam ligeiramente a posição em relação ao que foi medido.
+      clone.querySelectorAll('.node-card').forEach(el => {
+        el.classList.remove(
+          'ring-2', 'ring-4', 'ring-indigo-500', 'ring-amber-400',
+          'shadow-xl', 'scale-[1.02]', 'bg-amber-50', 'bg-indigo-50/30',
+          'drag-over', 'dragging'
+        );
+      });
       stage.appendChild(clone);
 
       viewport.style.width = `${Math.ceil(cropW * scale)}px`;
@@ -4326,7 +4335,15 @@
       stage.style.height = `${root.offsetHeight}px`;
       stage.style.left = `${-cropX * scale}px`;
       stage.style.top = `${-cropY * scale}px`;
-      stage.style.transform = `scale(${scale})`;
+      stage.style.transform = 'none';
+
+      // Papel sob medida: a folha é cortada exatamente no recorte + o
+      // cabeçalho, sem sobra de espaço em branco.
+      const headerAllowanceMm = 20;
+      const wMm = (cropW * scale) / PX_PER_MM + PAGE_MARGIN_MM * 2;
+      const hMm = (cropH * scale) / PX_PER_MM + PAGE_MARGIN_MM * 2 + headerAllowanceMm;
+      applyExactPageSize(Math.max(40, wMm), Math.max(40, hMm));
+
       return true;
     }
 
@@ -4347,6 +4364,7 @@
         setTimeout(() => {
           window.print();
           document.body.classList.remove('print-crop');
+          clearOptimizedPageSize();
           cancelCropPrintMode();
         }, 160);
       });
