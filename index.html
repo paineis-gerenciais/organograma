@@ -141,6 +141,40 @@
       word-break: normal;
     }
 
+    /* Última camada em modo vertical: em vez da fileira horizontal padrão,
+       empilha os cartões em coluna, ligados por uma "espinha" vertical com um
+       traço curto até cada cartão — visual parecido com as unidades de
+       assessoria, mas simples o bastante para qualquer quantidade de itens. */
+    .org-tree ul.vertical-layer {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      position: relative;
+      padding-left: 26px !important;
+      padding-top: 6px;
+      gap: 16px;
+      border-left: 2px solid #cbd5e1;
+    }
+    .org-tree ul.vertical-layer::before,
+    .org-tree ul.vertical-layer::after { display: none; }
+    .org-tree ul.vertical-layer > li {
+      padding: 0 !important;
+      text-align: left;
+    }
+    .org-tree ul.vertical-layer > li::before,
+    .org-tree ul.vertical-layer > li::after { display: none; }
+    .org-tree ul.vertical-layer > li > .node-wrapper { padding-top: 0 !important; }
+    .org-tree ul.vertical-layer > li > .node-wrapper::before {
+      content: '';
+      position: absolute;
+      left: -26px;
+      top: 50%;
+      width: 26px;
+      height: 2px;
+      background: #cbd5e1;
+      transform: translateY(-1px);
+    }
+
     /* Assessorias: formato lateral original, mantendo toda a descendência no mesmo lado. */
     #tree-viewport { transform-origin: 0 0; }
     .staff-zone {
@@ -488,6 +522,13 @@
         zoom: var(--print-scale, 1) !important;
       }
 
+      /* Borda simples nos cartões ao imprimir: tira a sombra de profundidade
+         (que não serve para nada no papel) e mantém só a borda colorida do
+         tipo da unidade + a borda cinza fina. */
+      .node-card {
+        box-shadow: none !important;
+      }
+
       .org-tree {
         transform: none !important;
         padding: 0 !important;
@@ -504,15 +545,25 @@
 
       #floating-tooltip { display: none !important; }
 
-      /* Segunda página: competências / descrição */
+      /* Segunda página: competências / descrição — só aparece quando o modo
+         "Competências / Descrição" é escolhido (ver body.print-details-only
+         mais abaixo). Nos demais modos ela fica oculta, para não gerar uma
+         página extra indesejada. */
       #print-details-page {
-        display: block !important;
+        display: none;
         position: static !important;
         width: 100% !important;
         margin: 0 !important;
         padding: 0 !important;
         break-before: page;
         page-break-before: always;
+      }
+      body.print-details-only #print-details-page {
+        display: block !important;
+      }
+      body.print-details-only #canvas-container,
+      body.print-details-only #print-header {
+        display: none !important;
       }
 
       #print-details-header {
@@ -941,6 +992,36 @@
   </div>
 
   <!-- MODAL: PDF OTIMIZADO (escolha de papel) -->
+  <!-- MODAL: ESCOLHA DO QUE GERAR EM PDF -->
+  <div id="print-choice-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] hidden items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
+        <i class="fa-solid fa-print text-emerald-600"></i>
+        <h3 class="font-bold text-slate-800">Gerar PDF</h3>
+      </div>
+      <div class="p-6 space-y-3">
+        <p class="text-xs text-slate-500 mb-1">O que você quer gerar?</p>
+        <button type="button" onclick="triggerPrint('organograma')" class="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-sitemap"></i></div>
+          <div>
+            <div class="text-sm font-bold text-slate-800">Organograma</div>
+            <div class="text-[11px] text-slate-500">Página única, em alta resolução, no tamanho exato do organograma</div>
+          </div>
+        </button>
+        <button type="button" onclick="triggerPrint('detalhes')" class="w-full text-left px-4 py-3 rounded-xl border border-slate-200 hover:border-indigo-300 hover:bg-indigo-50 transition-colors flex items-center gap-3">
+          <div class="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-table-list"></i></div>
+          <div>
+            <div class="text-sm font-bold text-slate-800">Competências / Descrição</div>
+            <div class="text-[11px] text-slate-500">Lista em tabela com a descrição de cada unidade</div>
+          </div>
+        </button>
+        <div class="pt-1 flex justify-end">
+          <button type="button" onclick="closePrintChoiceModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Cancelar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="optimized-print-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-[60] hidden items-center justify-center p-4 no-print">
     <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
       <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center gap-2">
@@ -1074,8 +1155,8 @@
           </button>
           <div class="absolute right-0 mt-1 w-44 bg-white rounded-xl shadow-xl border border-slate-200 hidden group-hover:block z-30 py-1">
             <button onclick="exportJSON()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2"><i class="fa-solid fa-file-code text-indigo-600"></i> Baixar JSON</button>
-            <button onclick="triggerPrint()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2"><i class="fa-solid fa-print text-emerald-600"></i> Imprimir / PDF</button>
-            <button onclick="openOptimizedPrintModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2" title="Reorganiza automaticamente os ramos para reduzir espaços vazios"><i class="fa-solid fa-compress text-violet-600"></i> PDF otimizado</button>
+            <button onclick="openPrintChoiceModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2"><i class="fa-solid fa-print text-emerald-600"></i> Gerar PDF</button>
+            <button onclick="openOptimizedPrintModal()" class="w-full text-left px-4 py-2 text-xs text-slate-700 hover:bg-slate-100 flex items-center gap-2" title="Imprime o organograma exatamente como está na tela, dividido em páginas se necessário"><i class="fa-solid fa-compress text-violet-600"></i> Imprimir/PDF</button>
           </div>
         </div>
       </div>
@@ -1105,7 +1186,11 @@
             <button id="layer-counter" type="button" onclick="toggleAllLayers()" class="min-w-7 px-1 h-6 rounded text-[9px] font-bold text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 transition-colors cursor-pointer" title="Clique para expandir tudo ou recolher tudo">Todos</button>
             <button onclick="changeLayer(-1)" class="w-7 h-7 rounded hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors" title="Recolher: ocultar um nível"><i class="fa-solid fa-minus text-[10px]"></i></button>
           </div>
-          
+
+          <button id="last-layer-orientation-btn" onclick="toggleLastLayerOrientation()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Última camada: horizontal (clique para deixar vertical)">
+            <i class="fa-solid fa-grip-lines"></i>
+          </button>
+
           <hr class="border-slate-200 mx-1">
 
           <!-- Zoom & Centro -->
@@ -1495,6 +1580,10 @@
     let isDraggingCanvas = false;
     let startX = 0, startY = 0;
     let globalMaxLayer = 99;
+    // Quando true, a última fileira visível de cada ramo (unidades sem
+    // filhas visíveis) é desenhada em coluna vertical, em vez da fileira
+    // horizontal padrão — útil quando o último nível tem muitos itens.
+    let lastLayerVertical = false;
 
     // Estado da seleção geométrica usada pelo recurso “Imprimir recorte”.
     let cropSelectionActive = false;
@@ -2580,12 +2669,14 @@
       const marginX = 16;
       const pageW = doc.internal.pageSize.getWidth();
       const pageH = doc.internal.pageSize.getHeight();
-      let y = 16;
+      let y = 14;
 
-      // Cabeçalho com as mesmas logos institucionais do painel.
+      // Cabeçalho compacto, só com as logos institucionais e o título do
+      // documento — o nome do organograma vira o título logo abaixo da
+      // linha "Comparação:", não fica mais aqui em cima.
       const headerEl = document.getElementById('print-header');
       const logos = headerEl ? headerEl.querySelectorAll('img') : [];
-      const logoH = 12;
+      const logoH = 7;
       [logos[0], logos[1]].forEach((img, i) => {
         if (!img || !img.complete || !img.naturalWidth) return;
         try {
@@ -2597,17 +2688,13 @@
       });
 
       doc.setFont('helvetica', 'bold');
-      doc.setFontSize(13);
+      doc.setFontSize(11);
       doc.setTextColor(30, 41, 59);
-      doc.text('Relatório de consolidação', pageW / 2, y + 5, { align: 'center' });
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(9.5);
-      doc.setTextColor(71, 85, 105);
-      doc.text(chart.name || '', pageW / 2, y + 11, { align: 'center' });
+      doc.text('Relatório de consolidação', pageW / 2, y + logoH / 2 + 1.5, { align: 'center' });
 
-      y += logoH + 6;
-      doc.setDrawColor(30, 41, 59);
-      doc.setLineWidth(0.4);
+      y += logoH + 4;
+      doc.setDrawColor(203, 213, 225);
+      doc.setLineWidth(0.3);
       doc.line(marginX, y, pageW - marginX, y);
       y += 6;
 
@@ -2618,7 +2705,14 @@
       const infoLine = `Comparação: ${report.baseName} × ${report.targetName} — gerado em ${new Date(report.generatedAt).toLocaleString('pt-BR')}`;
       const infoLines = doc.splitTextToSize(infoLine, pageW - marginX * 2);
       doc.text(infoLines, marginX, y);
-      y += infoLines.length * 4.5 + 5;
+      y += infoLines.length * 4.3 + 5;
+
+      // Nome do organograma como título, logo abaixo da linha de comparação.
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.text(chart.name || 'Organograma', marginX, y);
+      y += 8;
 
       function ensureSpace(height) {
         if (y + height > pageH - 16) { doc.addPage(); y = 16; }
@@ -2962,7 +3056,8 @@
       let lineHtml = '';
       if (hasLineChildren && !isCollapsed) {
         downwardConnector = `<div class="mx-auto w-[2px] bg-slate-300 relative z-0" style="height: 25px;"></div>`;
-        lineHtml = `<ul>${lineChildren.map(c => renderNodeHtml(c, depth + 1)).join('')}</ul>`;
+        const useVertical = lastLayerVertical && isTerminalRow(lineChildren);
+        lineHtml = `<ul class="${useVertical ? 'vertical-layer' : ''}">${lineChildren.map(c => renderNodeHtml(c, depth + 1)).join('')}</ul>`;
       }
 
       return `
@@ -2983,6 +3078,7 @@
 
               <div class="absolute -right-3 -top-3 hidden group-hover:flex bg-white shadow-md border border-slate-200 rounded-lg p-1 gap-1 z-30">
                 <button onclick="event.stopPropagation(); openAddModalForParent('${node.id}')" class="w-6 h-6 rounded hover:bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs" title="Adicionar Subordinada"><i class="fa-solid fa-plus"></i></button>
+                ${node.id !== orgTree.id ? `<button onclick="event.stopPropagation(); deleteUnit('${node.id}')" class="w-6 h-6 rounded hover:bg-rose-50 text-rose-500 flex items-center justify-center text-xs" title="Excluir"><i class="fa-solid fa-trash"></i></button>` : ''}
               </div>
 
               ${hasAnyChildren ? `
@@ -3247,6 +3343,28 @@
     }
 
     /* --- LAYER LOGIC --- */
+    // Uma fileira de irmãos é "terminal" quando nenhum deles tem filhas
+    // visíveis no momento (ou porque não têm filhas, ou porque estão
+    // recolhidos) — é essa fileira que a orientação vertical afeta.
+    function isTerminalRow(children) {
+      return children.every(c => !(c.children && c.children.length) || collapsedNodes.has(c.id));
+    }
+
+    function toggleLastLayerOrientation() {
+      lastLayerVertical = !lastLayerVertical;
+      const btn = document.getElementById('last-layer-orientation-btn');
+      if (btn) {
+        btn.classList.toggle('bg-indigo-100', lastLayerVertical);
+        btn.classList.toggle('text-indigo-700', lastLayerVertical);
+        const icon = btn.querySelector('i');
+        if (icon) icon.className = lastLayerVertical ? 'fa-solid fa-grip-lines-vertical' : 'fa-solid fa-grip-lines';
+        btn.title = lastLayerVertical
+          ? 'Última camada: vertical (clique para voltar à horizontal)'
+          : 'Última camada: horizontal (clique para deixar vertical)';
+      }
+      renderApp();
+    }
+
     function changeLayer(delta) {
       if (!orgTree) return;
       const maxDepth = getTreeDepth(orgTree);
@@ -3625,25 +3743,22 @@
       `;
     }
 
-    function updatePrintScale() {
+    // Calcula o tamanho de papel (mm) que caiba exatamente o organograma
+    // inteiro, sem se prender a um formato padrão (A4, Carta etc.) — usado
+    // pelo botão "Gerar PDF" > Organograma, que imprime em página única, em
+    // alta resolução (o zoom no leitor de PDF revela os detalhes).
+    function computePrintPageSizeMm() {
+      const bounds = getRealTreeContentBounds();
+      const headerAllowanceMm = 24; // espaço aproximado para o cabeçalho padrão
+      if (!bounds) return { w: 297, h: 210 };
+      const wMm = bounds.width / PX_PER_MM + PAGE_MARGIN_MM * 2;
+      const hMm = bounds.height / PX_PER_MM + PAGE_MARGIN_MM * 2 + headerAllowanceMm;
+      return { w: Math.max(60, wMm), h: Math.max(60, hMm) };
+    }
+
+    function resetPrintScale() {
       const root = document.getElementById('tree-root');
-      const bounds = getVisibleOrgBounds();
-      if (!root || !bounds) return;
-
-      const currentZoom = zoomLevel || 1;
-      const logicalWidth = Math.max(1, (bounds.right - bounds.left) / currentZoom);
-      const logicalHeight = Math.max(1, (bounds.bottom - bounds.top) / currentZoom);
-
-      /* Área útil real de uma folha A4 paisagem, já descontando a margem
-         física e o cabeçalho (mesmo cálculo usado no PDF otimizado). Sem piso
-         de escala: o organograma inteiro SEMPRE cabe em uma única folha, por
-         maior que seja. Como o encolhimento aqui é feito via `zoom` (CSS),
-         o texto continua sendo renderizado como texto de verdade — e não uma
-         imagem — então dá para ampliar o PDF sem perder nitidez. */
-      const { targetWidth, targetHeightTop } = getOptimizedPaperMetrics('A4');
-      const scale = Math.min(1, targetWidth / logicalWidth, targetHeightTop / logicalHeight);
-
-      root.style.setProperty('--print-scale', Math.max(0.02, scale).toFixed(4));
+      if (root) root.style.setProperty('--print-scale', '1');
     }
 
     /* ---------- Layout automático do PDF otimizado ---------- */
@@ -4001,13 +4116,19 @@
     // corresponda de fato ao papel que sai da impressora.
     function applyOptimizedPageSize(paperKey) {
       const paper = OPTIMIZED_PAPER_SIZES[paperKey] || OPTIMIZED_PAPER_SIZES.A4;
+      applyExactPageSize(paper.w, paper.h);
+    }
+
+    // Define um tamanho de papel sob medida (em mm), sem se prender a um
+    // formato padrão — usado pelo "Gerar PDF" > Organograma.
+    function applyExactPageSize(wMm, hMm) {
       let style = document.getElementById('optimized-page-size-style');
       if (!style) {
         style = document.createElement('style');
         style.id = 'optimized-page-size-style';
         document.head.appendChild(style);
       }
-      style.textContent = `@media print { body.print-optimized { } @page { size: ${paper.w}mm ${paper.h}mm; margin: ${PAGE_MARGIN_MM}mm; } }`;
+      style.textContent = `@media print { @page { size: ${wMm.toFixed(1)}mm ${hMm.toFixed(1)}mm; margin: ${PAGE_MARGIN_MM}mm; } }`;
     }
 
     function clearOptimizedPageSize() {
@@ -4241,26 +4362,45 @@
       });
     }
 
-    function triggerPrint() {
+    function openPrintChoiceModal() {
+      if (!orgTree) { showToast('Abra um organograma primeiro.', 'error'); return; }
+      const modal = document.getElementById('print-choice-modal');
+      if (!modal) { triggerPrint('organograma'); return; }
+      modal.classList.remove('hidden');
+      modal.classList.add('flex');
+    }
+
+    function closePrintChoiceModal() {
+      const modal = document.getElementById('print-choice-modal');
+      if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+    }
+
+    function triggerPrint(mode) {
+      closePrintChoiceModal();
+      mode = mode === 'detalhes' ? 'detalhes' : 'organograma';
       const collapsedBackup = new Set(collapsedNodes);
 
       hideUnitTooltip();
-      document.body.classList.remove('print-optimized');
-      document.body.classList.remove('print-crop');
+      document.body.classList.remove('print-optimized', 'print-crop', 'print-details-only');
       collapsedNodes.clear();
       renderApp();
-      // Fixa o tamanho físico do papel em A4 paisagem, o mesmo usado no
-      // cálculo de updatePrintScale — garante que o organograma realmente
-      // caiba em UMA folha, e não apenas se aproxime de um tamanho padrão
-      // que pode variar conforme a impressora/navegador.
-      applyOptimizedPageSize('A4');
+
+      if (mode === 'detalhes') {
+        document.body.classList.add('print-details-only');
+      } else {
+        // Página sob medida para o organograma inteiro — sem se prender a um
+        // formato padrão (A4 etc.) — em página única e alta resolução.
+        const size = computePrintPageSizeMm();
+        applyExactPageSize(size.w, size.h);
+      }
 
       requestAnimationFrame(() => {
         preparePrintDetails();
-        updatePrintScale();
+        if (mode === 'organograma') resetPrintScale();
 
         setTimeout(() => {
           window.print();
+          document.body.classList.remove('print-details-only');
           clearOptimizedPageSize();
 
           /* Retorna a visualização ao estado anterior depois que a janela de impressão fecha. */

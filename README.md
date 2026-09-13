@@ -32,23 +32,38 @@ Firestore como banco de dados na nuvem.
 - **Relatório de consolidação**: ao consolidar uma comparação entre dois
   organogramas, um relatório com as diferenças aprovadas, ajustadas e
   rejeitadas fica disponível direto no card do organograma consolidado
-  (botão "Relatório da consolidação"), com opção de baixar em **PDF** (com
-  o mesmo cabeçalho institucional do painel) ou como página HTML.
-- **Seleção de tamanho de papel no PDF otimizado**: A4, A3, A2, A1, Carta e
-  Ofício, com o cálculo de quantas folhas serão necessárias mostrado antes
-  de gerar o PDF.
-- **Fidelidade visual do PDF otimizado**: cada página é um recorte do próprio
-  organograma renderizado na tela (não mais um redesenho compacto) — a
-  posição, o tamanho e o estilo de cada caixa ficam idênticos aos da tela.
-  Quando o organograma não cabe em uma única folha, ele sai em várias
-  páginas com uma faixa de sobreposição entre elas, sem reorganizar nada.
-- **"Imprimir / PDF" sempre em 1 folha**: o organograma inteiro sempre cabe
-  em uma única página A4, não importa o tamanho — sem piso de escala. Como
-  o encolhimento é feito via `zoom` do CSS (texto de verdade, não uma
-  imagem), dá para ampliar o PDF gerado sem perder nitidez.
+  (botão "Relatório da consolidação"), com opção de baixar em **PDF**
+  (cabeçalho compacto, com logos pequenas e o nome do organograma como
+  título logo abaixo da linha "Comparação: ...", não mais repetido no topo)
+  ou como página HTML.
+- **Seleção de tamanho de papel no Imprimir/PDF (antigo "PDF otimizado")**:
+  A4, A3, A2, A1, Carta e Ofício, com o cálculo de quantas folhas serão
+  necessárias mostrado antes de gerar o PDF.
+- **Fidelidade visual do Imprimir/PDF**: cada página é um recorte do próprio
+  organograma renderizado na tela (não um redesenho compacto) — a posição,
+  o tamanho e o estilo de cada caixa ficam idênticos aos da tela. Quando o
+  organograma não cabe em uma única folha, ele sai em várias páginas com uma
+  faixa de sobreposição entre elas, sem reorganizar nada.
 - **Pastas na tela inicial**: dá para criar pastas para organizar os
   organogramas, mover organogramas entre pastas (seletor no rodapé de cada
   card) e navegar para dentro/fora de uma pasta.
+- **Botão de excluir nas unidades padrão**: agora aparece ao lado do "+" ao
+  passar o mouse, igual já acontecia nas unidades de assessoria.
+- **Última camada em coluna (opcional)**: um botão na barra lateral esquerda
+  (logo abaixo dos controles de "Camadas") alterna a última fileira de cada
+  ramo entre a fileira horizontal padrão e uma coluna vertical — útil quando
+  o último nível tem muitos itens.
+- **Botões de impressão reorganizados e renomeados**:
+  - **Gerar PDF** (antigo "Imprimir / PDF") agora pergunta o que você quer
+    gerar: **Organograma** (página única, sob medida para o tamanho do
+    organograma — sem se prender a A4 ou qualquer formato padrão — em alta
+    resolução, para dar zoom no PDF sem perder nitidez) ou **Competências /
+    Descrição** (só a tabela, sem a página do organograma).
+  - **Imprimir/PDF** (antigo "PDF otimizado") continua reproduzindo o
+    organograma exatamente como na tela, dividido em páginas do tamanho de
+    papel escolhido quando necessário.
+  - Em qualquer um dos modos, os cartões impressos usam borda simples (sem
+    sombra).
 
 ## Arquivos deste pacote
 
@@ -135,9 +150,9 @@ futuro for necessário restringir o acesso, o caminho é:
 Essa mudança não foi feita agora para manter o painel simples de usar, mas
 as regras já estão organizadas para facilitar essa evolução depois.
 
-## Como funciona o PDF otimizado (organogramas grandes)
+## Como funciona o "Imprimir/PDF" (organogramas grandes, antigo "PDF otimizado")
 
-O botão **PDF otimizado** reproduz o organograma exatamente como ele aparece
+O botão **Imprimir/PDF** reproduz o organograma exatamente como ele aparece
 na tela — no mesmo tamanho, com o mesmo estilo — e o divide em páginas do
 tamanho de papel escolhido, com uma faixa de sobreposição entre elas (para
 nenhum cartão ficar cortado). Ele **não redesenha nem reorganiza** cartões:
@@ -162,11 +177,23 @@ impressas reproduz fielmente o que está na tela.
   aparece apenas nas páginas da primeira linha da grade de montagem. As
   demais páginas trazem só uma numeração discreta no canto, para não
   interromper visualmente o organograma ao montar as folhas.
+- **Só gera página com conteúdo de verdade**: uma página só é criada se uma
+  parte substancial de algum cartão realmente aparecer nela — evita folhas
+  quase em branco, com só um pedacinho de cartão ou apenas linhas de conexão
+  passando por cima de espaço vazio.
+- Cartões impressos usam borda simples (sem sombra), em qualquer tamanho de
+  papel.
 
-## Como funciona o "Imprimir / PDF" (organograma inteiro em 1 folha)
+## Como funciona o "Gerar PDF" (antigo "Imprimir / PDF")
 
-Esse botão sempre gera o organograma inteiro em **uma única página A4**,
-reduzindo a escala conforme necessário — sem limite mínimo. Como a redução é
-feita via `zoom` do CSS (o texto continua sendo texto de verdade, não uma
-imagem), o PDF gerado pode ser ampliado (zoom no leitor de PDF) sem perder
-nitidez, mesmo que o organograma pareça pequeno na visualização inicial.
+Esse botão abre um modal perguntando o que gerar:
+
+- **Organograma**: uma única página, no tamanho exato do organograma
+  (largura e altura calculadas a partir do próprio desenho — sem se prender
+  a A4, Carta ou qualquer formato padrão), em alta resolução. Como a
+  renderização é feita via `zoom` do CSS (o texto continua sendo texto de
+  verdade, não uma imagem), o PDF gerado pode ser ampliado (zoom no leitor
+  de PDF) sem perder nitidez, mesmo que o organograma pareça pequeno na
+  visualização inicial.
+- **Competências / Descrição**: gera só a tabela com hierarquia, sigla e
+  descrição de cada unidade — sem a página do organograma.
