@@ -61,9 +61,56 @@ Firestore como banco de dados na nuvem.
     Descrição** (só a tabela, sem a página do organograma).
   - **Imprimir/PDF** (antigo "PDF otimizado") continua reproduzindo o
     organograma exatamente como na tela, dividido em páginas do tamanho de
-    papel escolhido quando necessário.
-  - Em qualquer um dos modos, os cartões impressos usam borda simples (sem
-    sombra).
+    papel escolhido quando necessário — e agora é mais rápido: em vez de
+    clonar a árvore inteira do zero para cada página, ela é serializada uma
+    única vez e reaproveitada, e todas as páginas são montadas fora do
+    documento e inseridas de uma só vez (menos travadas em organogramas com
+    muitas páginas).
+  - Os ícones de **Gerar PDF** e **Imprimir/PDF** foram trocados entre si.
+  - **Imprimir seleção** (antigo "Imprimir recorte") agora fica dentro do
+    menu **Exportar**, em vez de um botão avulso na barra de ferramentas, e
+    imprime a área selecionada em tamanho exato (escala 1, sem redimensionar
+    para caber num formato padrão), numa folha cortada sob medida para o
+    recorte + o cabeçalho — sem sobra de espaço.
+  - Em qualquer um dos modos, os cartões impressos usam borda simples e
+    neutra (sem sombra e sem a cor por tipo de unidade).
+- **Editar título/subtítulo direto no card**: cada card na tela inicial
+  ganhou um botão de edição (ícone de lápis), à esquerda do botão de
+  duplicar, para renomear o organograma sem precisar abri-lo primeiro.
+- **Ajustar Layout**: na tela do organograma, o botão "Duplicar" da barra de
+  ferramentas foi substituído por **Ajustar Layout**. Ele abre uma tela à
+  parte com os mesmos controles de zoom, centralizar e camadas da tela
+  principal (inclusive scroll para zoom e arrastar o fundo para navegar),
+  onde dá para arrastar as caixas pelo canvas — sem poder editar unidades ou
+  vínculos. O arraste fica travado no eixo horizontal OU vertical (o que for
+  definido pelo primeiro movimento), e as linhas de conexão usam o mesmo
+  desenho em ângulo reto da tela principal, acompanhando a caixa movida.
+  Tem botões de **Desfazer**, **Refazer** e **Resetar posições** (volta tudo
+  para a posição original calculada pela árvore). As posições ajustadas
+  ficam salvas com o organograma.
+  > Importante: esse ajuste de posição vale só dentro da própria tela
+  > "Ajustar Layout" — a tela principal do organograma continua usando o
+  > layout automático de árvore (hierárquico), e os modos de impressão
+  > também não usam essas posições manuais ainda. Se no futuro você quiser
+  > que a impressão ou a tela principal sigam esse layout ajustado, é um
+  > passo a mais que peço para tratarmos separadamente.
+- **Imprimir/PDF ajusta a escala automaticamente**: antes, ele sempre
+  imprimia no tamanho exato da tela (1:1), então organogramas grandes podiam
+  sair em muitas páginas. Agora ele testa reduções de escala (até 50%) e
+  escolhe a maior escala que resulte no MENOR número de páginas — aproveita
+  melhor cada folha (menos sobra em branco na última linha/coluna) e reduz o
+  total de páginas quando uma redução pequena já evita precisar de mais uma
+  linha ou coluna inteira. O card de seleção de papel mostra a porcentagem
+  usada quando há redução.
+- **Zoom mais fluido**: a rolagem do mouse/trackpad agora usa um fator
+  proporcional à distância rolada (em vez de um valor fixo por evento), o
+  que deixa trackpads (muitos eventos pequenos) e mouses comuns (poucos
+  eventos grandes) igualmente suaves, com as atualizações agrupadas por
+  quadro de animação para não travar em rolagens rápidas. Os botões de
+  lupa (+/-) agora também ficam ancorados no centro da tela, em vez de
+  fazer o organograma "pular" para longe do centro ao clicar neles. Essa
+  correção vale tanto para a tela do organograma quanto para "Ajustar
+  Layout".
 
 ## Arquivos deste pacote
 
@@ -177,12 +224,29 @@ impressas reproduz fielmente o que está na tela.
   aparece apenas nas páginas da primeira linha da grade de montagem. As
   demais páginas trazem só uma numeração discreta no canto, para não
   interromper visualmente o organograma ao montar as folhas.
-- **Só gera página com conteúdo de verdade**: uma página só é criada se uma
-  parte substancial de algum cartão realmente aparecer nela — evita folhas
-  quase em branco, com só um pedacinho de cartão ou apenas linhas de conexão
-  passando por cima de espaço vazio.
-- Cartões impressos usam borda simples (sem sombra), em qualquer tamanho de
-  papel.
+- **Margens reduzidas ao mínimo**: as margens físicas de cada folha (inclusive
+  a inferior) foram diminuídas para 0,75mm, para aproveitar quase toda a
+  área do papel e reduzir o número de páginas necessárias.
+- **Só gera página com conteúdo de verdade**: uma página só é criada quando a
+  MAIORIA de algum cartão (não só uma pontinha) aparece nela — evita folhas
+  quase em branco, dominadas por um cantinho de cartão ou só por linhas de
+  conexão passando por cima de espaço vazio.
+- Cartões impressos usam borda simples e neutra (sem sombra e sem a cor por
+  tipo de unidade — linha e assessoria saem iguais no papel), em qualquer
+  tamanho de papel.
+
+> **Importante sobre cabeçalho/rodapé do navegador**: se a opção
+> "Cabeçalhos e rodapés" estiver marcada na caixa de diálogo de impressão do
+> navegador, ele mesmo desenha, por conta própria, uma linha com data/hora e
+> o título da página no topo e a URL com o número da página embaixo — isso
+> não é gerado pelo painel. Nenhum site consegue pré-marcar ou desmarcar
+> essa caixinha do navegador por código, nem mudar o tamanho da fonte ou a
+> cor desse texto, porque ele é desenhado pelo motor de impressão, por fora
+> da página. A única forma de deixá-la desmarcada por padrão é desmarcar
+> manualmente na primeira impressão — a maioria dos navegadores guarda essa
+> escolha para as próximas vezes no mesmo perfil. Com as margens agora em
+> 0,75mm, vale desmarcar essa opção: sobra pouco espaço para esse texto do
+> navegador, que pode acabar sobrepondo o conteúdo do organograma.
 
 ## Como funciona o "Gerar PDF" (antigo "Imprimir / PDF")
 

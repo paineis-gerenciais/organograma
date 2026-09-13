@@ -438,6 +438,7 @@
        nada — por isso a posição de cada caixa fica idêntica à da tela. */
     .opt-real-stage {
       position: absolute;
+      transform-origin: 0 0;
     }
     .optimized-page-tag {
       text-align: right;
@@ -857,8 +858,25 @@
         </button>
       </div>
     </header>
-    <div id="layout-canvas-viewport" class="flex-1 relative overflow-auto bg-slate-100 bg-grid-pattern">
-      <div id="layout-canvas" style="position:relative; min-width:100%; min-height:100%;">
+    <div id="layout-canvas-viewport" class="flex-1 relative overflow-hidden bg-slate-100 bg-grid-pattern canvas-grab select-none">
+
+      <!-- Floating Canvas Controls (Top Left) — mesmos controles da tela do organograma -->
+      <div class="absolute top-4 left-4 z-10 flex flex-col gap-2 no-print">
+        <div class="bg-white/90 backdrop-blur-md p-1.5 rounded-xl border border-slate-200 shadow-md flex flex-col gap-2">
+          <div class="flex flex-col items-center bg-slate-50 border border-slate-200 rounded p-1 gap-1">
+            <span class="text-[8px] font-bold text-slate-500 uppercase tracking-widest leading-none mt-1">Camadas</span>
+            <button onclick="changeLayerInLayoutView(1)" class="w-7 h-7 rounded hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors" title="Expandir: mostrar mais um nível"><i class="fa-solid fa-plus text-[10px]"></i></button>
+            <button id="layout-layer-counter" type="button" onclick="toggleAllLayersInLayoutView()" class="min-w-7 px-1 h-6 rounded text-[9px] font-bold text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 transition-colors cursor-pointer" title="Clique para expandir tudo ou recolher tudo">Todos</button>
+            <button onclick="changeLayerInLayoutView(-1)" class="w-7 h-7 rounded hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors" title="Recolher: ocultar um nível"><i class="fa-solid fa-minus text-[10px]"></i></button>
+          </div>
+          <hr class="border-slate-200 mx-1">
+          <button onclick="layoutZoomIn()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Aumentar Zoom"><i class="fa-solid fa-magnifying-glass-plus text-xs"></i></button>
+          <button onclick="layoutZoomOut()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Diminuir Zoom"><i class="fa-solid fa-magnifying-glass-minus text-xs"></i></button>
+          <button onclick="centerLayoutCanvas()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Centralizar Visualização"><i class="fa-solid fa-crosshairs text-xs"></i></button>
+        </div>
+      </div>
+
+      <div id="layout-canvas" style="position:absolute; top:0; left:0; transform-origin:0 0;">
         <svg id="layout-canvas-connectors" style="position:absolute; top:0; left:0; pointer-events:none;"></svg>
       </div>
     </div>
@@ -1654,6 +1672,7 @@
     /* --- INITIALIZATION --- */
     document.addEventListener("DOMContentLoaded", () => {
       setupCanvasPanZoom();
+      setupLayoutPanZoom();
       setupCropSelection();
       setupHistoryShortcuts();
       setupComparePanZoom();
@@ -3126,6 +3145,90 @@
       };
     }
 
+    /* Pan/zoom próprios da tela "Ajustar Layout" — mesmo comportamento da
+       tela principal (arrastar o fundo para navegar, scroll para zoom). */
+    let layoutZoomLevel = 1;
+    let layoutPanX = 0;
+    let layoutPanY = 0;
+    let isDraggingLayoutCanvas = false;
+    let layoutDragStartX = 0;
+    let layoutDragStartY = 0;
+
+    function applyLayoutTransform() {
+      const canvas = document.getElementById('layout-canvas');
+      if (canvas) canvas.style.transform = `translate(${layoutPanX}px, ${layoutPanY}px) scale(${layoutZoomLevel})`;
+    }
+
+    function layoutZoomIn() { zoomAroundViewportCenter('layout-canvas-viewport', () => layoutZoomLevel, z => layoutZoomLevel = z, () => layoutPanX, x => layoutPanX = x, () => layoutPanY, y => layoutPanY = y, 1.2, applyLayoutTransform); }
+    function layoutZoomOut() { zoomAroundViewportCenter('layout-canvas-viewport', () => layoutZoomLevel, z => layoutZoomLevel = z, () => layoutPanX, x => layoutPanX = x, () => layoutPanY, y => layoutPanY = y, 1 / 1.2, applyLayoutTransform); }
+
+    function setupLayoutPanZoom() {
+      const viewport = document.getElementById('layout-canvas-viewport');
+      if (!viewport) return;
+      viewport.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.layout-node-card')) return;
+        isDraggingLayoutCanvas = true;
+        layoutDragStartX = e.clientX - layoutPanX;
+        layoutDragStartY = e.clientY - layoutPanY;
+        viewport.classList.replace('canvas-grab', 'canvas-grabbing');
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!isDraggingLayoutCanvas) return;
+        layoutPanX = e.clientX - layoutDragStartX;
+        layoutPanY = e.clientY - layoutDragStartY;
+        applyLayoutTransform();
+      });
+      window.addEventListener('mouseup', () => {
+        if (!isDraggingLayoutCanvas) return;
+        isDraggingLayoutCanvas = false;
+        viewport.classList.replace('canvas-grabbing', 'canvas-grab');
+      });
+      setupWheelZoom(viewport, () => layoutZoomLevel, z => layoutZoomLevel = z, () => layoutPanX, x => layoutPanX = x, () => layoutPanY, y => layoutPanY = y, applyLayoutTransform);
+    }
+
+    function centerLayoutCanvas() {
+      const viewport = document.getElementById('layout-canvas-viewport');
+      const canvas = document.getElementById('layout-canvas');
+      if (!viewport || !canvas || !layoutNodesFlat.length) return;
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      layoutNodesFlat.forEach(n => {
+        const p = getLayoutPosition(n);
+        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
+      });
+      layoutZoomLevel = 1;
+      const centerX = (minX + maxX) / 2;
+      layoutPanX = viewport.clientWidth / 2 - centerX;
+      layoutPanY = 42 - minY;
+      applyLayoutTransform();
+    }
+
+    function changeLayerInLayoutView(delta) {
+      changeLayer(delta);
+      refreshLayoutFromTree();
+      const counter = document.getElementById('layer-counter');
+      const layoutCounter = document.getElementById('layout-layer-counter');
+      if (counter && layoutCounter) layoutCounter.innerText = counter.innerText;
+    }
+
+    function toggleAllLayersInLayoutView() {
+      toggleAllLayers();
+      refreshLayoutFromTree();
+      const counter = document.getElementById('layer-counter');
+      const layoutCounter = document.getElementById('layout-layer-counter');
+      if (counter && layoutCounter) layoutCounter.innerText = counter.innerText;
+    }
+
+    // Recalcula quais unidades aparecem (após mudar de camada) sem perder as
+    // posições manuais já ajustadas para as que continuam visíveis.
+    function refreshLayoutFromTree() {
+      const flat = buildLayoutFlatNodes();
+      if (!flat) return;
+      layoutNodesFlat = flat;
+      renderLayoutCanvas();
+    }
+
     function openLayoutAdjustScreen() {
       if (!currentChartId || !orgTree) { showToast('Abra um organograma primeiro.', 'error'); return; }
       const flat = buildLayoutFlatNodes();
@@ -3134,11 +3237,18 @@
       layoutOverridesDraft = { ...(chartsData[currentChartId].layoutOverrides || {}) };
       layoutHistory = [{ ...layoutOverridesDraft }];
       layoutHistoryIndex = 0;
+      layoutZoomLevel = 1;
+      layoutPanX = 0;
+      layoutPanY = 0;
+      const counter = document.getElementById('layer-counter');
+      const layoutCounter = document.getElementById('layout-layer-counter');
+      if (counter && layoutCounter) layoutCounter.innerText = counter.innerText;
       renderLayoutCanvas();
       updateLayoutUndoRedoButtons();
       const screen = document.getElementById('layout-adjust-screen');
       screen.classList.remove('hidden');
       screen.classList.add('flex');
+      requestAnimationFrame(centerLayoutCanvas);
     }
 
     function closeLayoutAdjustScreen() {
@@ -3178,9 +3288,8 @@
     // Só reposiciona os cartões já existentes e redesenha as linhas — usado
     // durante o arraste, para ficar fluido (sem recriar nada do zero).
     function updateLayoutPositionsOnly() {
-      const viewport = document.getElementById('layout-canvas-viewport');
       const canvas = document.getElementById('layout-canvas');
-      if (!viewport || !canvas) return;
+      if (!canvas) return;
 
       let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
       layoutNodesFlat.forEach(n => {
@@ -3193,8 +3302,8 @@
       const pad = 220; // espaço extra para arrastar caixas além dos limites naturais
       const originX = Math.min(0, minX) - pad;
       const originY = Math.min(0, minY) - pad;
-      const width = Math.max(viewport.clientWidth, maxX - originX + pad);
-      const height = Math.max(viewport.clientHeight, maxY - originY + pad);
+      const width = maxX - originX + pad;
+      const height = maxY - originY + pad;
 
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
@@ -3210,6 +3319,8 @@
       drawLayoutConnectors(originX, originY, width, height);
     }
 
+    // Linhas em ângulo reto (desce, atravessa, desce) — o mesmo padrão visual
+    // usado na tela principal do organograma, em vez de uma curva.
     function drawLayoutConnectors(originX, originY, width, height) {
       const svg = document.getElementById('layout-canvas-connectors');
       if (!svg) return;
@@ -3231,33 +3342,46 @@
         const x2 = c.x - originX + c.w / 2;
         const y2 = c.y - originY;
         const midY = (y1 + y2) / 2;
-        paths += `<path d="M ${x1} ${y1} C ${x1} ${midY}, ${x2} ${midY}, ${x2} ${y2}"/>`;
+        paths += `<path d="M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}"/>`;
       });
       svg.innerHTML = paths;
     }
 
+    // O arraste é travado no eixo (horizontal OU vertical) definido pelo
+    // primeiro movimento perceptível — evita posicionamentos diagonais e
+    // mantém as caixas alinhadas em linha/coluna, como pede um organograma.
     function startLayoutDrag(e, nodeId) {
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
+      e.stopPropagation();
       const node = layoutNodesFlat.find(n => n.id === nodeId);
       const el = document.getElementById(`layout-card-${nodeId}`);
       if (!node || !el) return;
       const startPos = getLayoutPosition(node);
       const startMouseX = e.clientX;
       const startMouseY = e.clientY;
+      let axis = null;
       el.classList.add('dragging');
 
       function onMove(ev) {
-        const dx = ev.clientX - startMouseX;
-        const dy = ev.clientY - startMouseY;
-        layoutOverridesDraft[nodeId] = { x: startPos.x + dx, y: startPos.y + dy };
+        const z = layoutZoomLevel || 1;
+        const dx = (ev.clientX - startMouseX) / z;
+        const dy = (ev.clientY - startMouseY) / z;
+        if (!axis) {
+          if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
+          axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        }
+        layoutOverridesDraft[nodeId] = {
+          x: axis === 'x' ? startPos.x + dx : startPos.x,
+          y: axis === 'y' ? startPos.y + dy : startPos.y
+        };
         updateLayoutPositionsOnly();
       }
       function onUp() {
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
         el.classList.remove('dragging');
-        commitLayoutChange();
+        if (axis) commitLayoutChange();
       }
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
@@ -3875,6 +3999,70 @@
     function closeSidebar() { document.getElementById('sidebar').classList.add('translate-x-full'); selectedNodeId = null; renderApp(); }
 
     /* --- CANVAS PAN AND ZOOM --- */
+    // ---------- Zoom/pan genéricos (compartilhados pela tela do organograma
+    // e pela tela "Ajustar Layout", para os dois terem o mesmo comportamento
+    // e as mesmas correções de fluidez) ----------
+
+    // Zoom ancorado no CENTRO do elemento indicado (usado pelos botões de
+    // lupa +/-) — antes, os botões aplicavam o zoom sem ancorar em ponto
+    // nenhum, fazendo o conteúdo "pular" para longe do centro da tela.
+    function zoomAroundViewportCenter(containerId, getZoom, setZoom, getPanX, setPanX, getPanY, setPanY, factor, applyFn, minZoom = 0.3, maxZoom = 2.5) {
+      const el = document.getElementById(containerId);
+      if (!el) return;
+      const rect = el.getBoundingClientRect();
+      const centerX = rect.width / 2;
+      const centerY = rect.height / 2;
+      const oldZoom = getZoom();
+      const newZoom = Math.max(minZoom, Math.min(maxZoom, oldZoom * factor));
+      if (newZoom === oldZoom) return;
+      const worldX = (centerX - getPanX()) / oldZoom;
+      const worldY = (centerY - getPanY()) / oldZoom;
+      setZoom(newZoom);
+      setPanX(centerX - worldX * newZoom);
+      setPanY(centerY - worldY * newZoom);
+      applyFn();
+    }
+
+    // Zoom com a roda do mouse/trackpad, ancorado no ponto sob o cursor.
+    // O fator é proporcional à distância rolada (deltaY), não um valor fixo
+    // por evento — assim trackpads (muitos eventos pequenos) e mouses comuns
+    // (poucos eventos grandes) ficam igualmente suaves. As atualizações são
+    // agrupadas por frame (requestAnimationFrame), em vez de recalcular a
+    // cada evento, para não travar em scrolls muito rápidos/sensíveis.
+    function setupWheelZoom(container, getZoom, setZoom, getPanX, setPanX, getPanY, setPanY, applyFn, opts = {}) {
+      const { minZoom = 0.3, maxZoom = 2.5, shouldSkip = () => false, onZoom = () => {} } = opts;
+      let pendingDeltaY = 0, pendingClientX = 0, pendingClientY = 0, rafScheduled = false;
+
+      function flush() {
+        rafScheduled = false;
+        const rect = container.getBoundingClientRect();
+        const mouseX = pendingClientX - rect.left;
+        const mouseY = pendingClientY - rect.top;
+        const oldZoom = getZoom();
+        const factor = Math.exp(-pendingDeltaY * 0.0015);
+        pendingDeltaY = 0;
+        const newZoom = Math.max(minZoom, Math.min(maxZoom, oldZoom * factor));
+        if (newZoom === oldZoom) return;
+
+        const worldX = (mouseX - getPanX()) / oldZoom;
+        const worldY = (mouseY - getPanY()) / oldZoom;
+        setZoom(newZoom);
+        setPanX(mouseX - worldX * newZoom);
+        setPanY(mouseY - worldY * newZoom);
+        applyFn();
+      }
+
+      container.addEventListener('wheel', (e) => {
+        if (shouldSkip()) return;
+        e.preventDefault();
+        onZoom();
+        pendingDeltaY += e.deltaY;
+        pendingClientX = e.clientX;
+        pendingClientY = e.clientY;
+        if (!rafScheduled) { rafScheduled = true; requestAnimationFrame(flush); }
+      }, { passive: false });
+    }
+
     function setupCanvasPanZoom() {
       const container = document.getElementById('canvas-container');
       container.addEventListener('mousedown', (e) => {
@@ -3892,35 +4080,17 @@
         isDraggingCanvas = false;
         container.classList.replace('canvas-grabbing', 'canvas-grab');
       });
-      
-      // Zoom ancorado no ponto sob o cursor: o conteúdo apontado pelo mouse permanece no mesmo lugar.
-      container.addEventListener('wheel', (e) => {
-        e.preventDefault();
-        if (cropSelectionActive) return;
-        hideUnitTooltip();
 
-        const rect = container.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-        const oldZoom = zoomLevel;
-        const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
-        const newZoom = Math.max(0.3, Math.min(2.5, oldZoom * zoomFactor));
-        if (newZoom === oldZoom) return;
-
-        const worldX = (mouseX - panX) / oldZoom;
-        const worldY = (mouseY - panY) / oldZoom;
-
-        zoomLevel = newZoom;
-        panX = mouseX - worldX * newZoom;
-        panY = mouseY - worldY * newZoom;
-        applyTransform();
-      }, { passive: false });
+      setupWheelZoom(container, () => zoomLevel, z => zoomLevel = z, () => panX, x => panX = x, () => panY, y => panY = y, applyTransform, {
+        shouldSkip: () => cropSelectionActive,
+        onZoom: hideUnitTooltip
+      });
     }
     function applyTransform() {
       document.getElementById('tree-viewport').style.transform = `translate(${panX}px, ${panY}px) scale(${zoomLevel})`;
     }
-    function zoomIn() { zoomLevel = Math.min(2.5, zoomLevel * 1.2); applyTransform(); }
-    function zoomOut() { zoomLevel = Math.max(0.3, zoomLevel * 0.8); applyTransform(); }
+    function zoomIn() { zoomAroundViewportCenter('canvas-container', () => zoomLevel, z => zoomLevel = z, () => panX, x => panX = x, () => panY, y => panY = y, 1.2, applyTransform); }
+    function zoomOut() { zoomAroundViewportCenter('canvas-container', () => zoomLevel, z => zoomLevel = z, () => panX, x => panX = x, () => panY, y => panY = y, 1 / 1.2, applyTransform); }
     function getVisibleOrgBounds() {
       const cards = Array.from(document.querySelectorAll('#tree-root .node-card'));
       if (!cards.length) return null;
@@ -4178,15 +4348,35 @@
     // de cada caixa no PDF é idêntica à da tela. Quando não cabe em uma
     // única folha, o organograma sai em várias, com uma faixa de
     // sobreposição entre elas para permitir montá-las depois.
+    // Escolhe a maior escala (até 100%) que resulta no menor número de
+    // páginas — sem mudar posições, só o "zoom" geral do organograma. Isso
+    // aproveita melhor cada folha (menos sobra em branco na última linha ou
+    // coluna) e reduz o total de páginas quando uma redução pequena já
+    // evita precisar de mais uma linha/coluna inteira.
+    function computeOptimalPrintScale(contentWidth, contentHeight, targetWidth, targetHeightOther) {
+      const minScale = 0.5;
+      let best = { scale: 1, pages: Infinity };
+      for (let s = 1; s >= minScale - 1e-9; s -= 0.02) {
+        const cols = Math.max(1, Math.ceil((contentWidth * s) / targetWidth));
+        const rows = Math.max(1, Math.ceil((contentHeight * s) / targetHeightOther));
+        const total = cols * rows;
+        if (total < best.pages || (total === best.pages && s > best.scale)) {
+          best = { scale: s, pages: total };
+        }
+      }
+      return best.scale;
+    }
+
     function computeRealTreeTiling(paperKey) {
       const bounds = getRealTreeContentBounds();
       if (!bounds) return null;
       const { boxes, minX, minY, width, height } = bounds;
       const { targetWidth, targetHeightTop, targetHeightOther } = getOptimizedPaperMetrics(paperKey);
 
-      const logicalViewW = targetWidth;
-      const logicalViewHTop = targetHeightTop;
-      const logicalViewHOther = targetHeightOther;
+      const scale = computeOptimalPrintScale(width, height, targetWidth, targetHeightOther);
+      const logicalViewW = targetWidth / scale;
+      const logicalViewHTop = targetHeightTop / scale;
+      const logicalViewHOther = targetHeightOther / scale;
 
       const maxCardW = Math.max(...boxes.map(b => b.w), 0);
       const maxCardH = Math.max(...boxes.map(b => b.h), 0);
@@ -4212,7 +4402,7 @@
 
       const usedRows = [...new Set(tiles.map(t => t.rowIndex))].sort((a, b) => a - b);
       const usedCols = [...new Set(tiles.map(t => t.colIndex))].sort((a, b) => a - b);
-      return { tiles, usedRows, usedCols };
+      return { tiles, usedRows, usedCols, scale };
     }
 
 
@@ -4226,12 +4416,15 @@
       if (!orgTree) { info.textContent = 'Abra um organograma para calcular as páginas.'; return; }
       const result = computeRealTreeTiling(selectedOptimizedPaper);
       if (!result) { info.textContent = 'Abra um organograma para calcular as páginas.'; return; }
-      const { tiles, usedRows, usedCols } = result;
+      const { tiles, usedRows, usedCols, scale } = result;
       const paperLabel = OPTIMIZED_PAPER_SIZES[selectedOptimizedPaper]?.label || selectedOptimizedPaper;
+      const scaleNote = scale < 0.995
+        ? ` em ${Math.round(scale * 100)}% do tamanho da tela — reduzido automaticamente para caber em menos páginas`
+        : ' no tamanho exato da tela';
       if (tiles.length <= 1) {
-        info.innerHTML = `Esse organograma cabe em <strong>1 página</strong> ${paperLabel}, na orientação paisagem, no tamanho exato da tela.`;
+        info.innerHTML = `Esse organograma cabe em <strong>1 página</strong> ${paperLabel}, na orientação paisagem,${scaleNote}.`;
       } else {
-        info.innerHTML = `Esse organograma será dividido em <strong>${tiles.length} páginas</strong> ${paperLabel} (grade de ${usedRows.length} linha${usedRows.length > 1 ? 's' : ''} × ${usedCols.length} coluna${usedCols.length > 1 ? 's' : ''}), no tamanho exato da tela (sem reduzir ou reorganizar os cartões), incluindo uma folha extra com o guia de montagem.`;
+        info.innerHTML = `Esse organograma será dividido em <strong>${tiles.length} páginas</strong> ${paperLabel} (grade de ${usedRows.length} linha${usedRows.length > 1 ? 's' : ''} × ${usedCols.length} coluna${usedCols.length > 1 ? 's' : ''}),${scaleNote} (sem reorganizar os cartões), incluindo uma folha extra com o guia de montagem.`;
       }
     }
 
@@ -4334,7 +4527,7 @@
       const effectivePaper = paperKey || selectedOptimizedPaper;
       const result = computeRealTreeTiling(effectivePaper);
       if (!result) return null;
-      const { tiles, usedRows, usedCols } = result;
+      const { tiles, usedRows, usedCols, scale } = result;
 
       const chart = currentChartId ? chartsData[currentChartId] : null;
       const standardHeader = document.getElementById('print-header');
@@ -4398,13 +4591,14 @@
         // sobreposição entre páginas vizinhas, para permitir montá-las depois.
         const viewport = document.createElement('div');
         viewport.className = 'optimized-page-viewport';
-        viewport.style.width = `${Math.ceil(viewW)}px`;
-        viewport.style.height = `${Math.ceil(viewH)}px`;
+        viewport.style.width = `${Math.ceil(viewW * scale)}px`;
+        viewport.style.height = `${Math.ceil(viewH * scale)}px`;
 
         const stage = document.createElement('div');
         stage.className = 'opt-real-stage';
-        stage.style.left = `${-viewX}px`;
-        stage.style.top = `${-viewY}px`;
+        stage.style.left = `${-viewX * scale}px`;
+        stage.style.top = `${-viewY * scale}px`;
+        if (scale !== 1) stage.style.transform = `scale(${scale})`;
 
         const wrapper = document.createElement('div');
         wrapper.innerHTML = treeHtml;
