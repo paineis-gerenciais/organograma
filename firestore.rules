@@ -36,6 +36,15 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    match /orgFolders/{folderId} {
+      allow read: if true;
+      allow create, update: if true
+        && request.resource.data.keys().hasAll(['id', 'name'])
+        && request.resource.data.id is string
+        && request.resource.data.name is string;
+      allow delete: if true;
+    }
+
     // Qualquer outra coleção/documento fica bloqueado por padrão.
     match /{document=**} {
       allow read, write: if false;

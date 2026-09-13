@@ -27,13 +27,35 @@ Firestore como banco de dados na nuvem.
 - **PDF otimizado, revisado**: a divisão do organograma em várias páginas
   (quando ele não cabe inteiro em uma folha) foi corrigida e ganhou uma
   página extra de "guia de montagem", explicada mais abaixo.
+- **Data de última modificação**: cada card na tela inicial mostra quando o
+  organograma foi editado pela última vez.
+- **Relatório de consolidação**: ao consolidar uma comparação entre dois
+  organogramas, um relatório com as diferenças aprovadas, ajustadas e
+  rejeitadas fica disponível direto no card do organograma consolidado
+  (botão "Relatório da consolidação"), com opção de baixar em **PDF** (com
+  o mesmo cabeçalho institucional do painel) ou como página HTML.
+- **Seleção de tamanho de papel no PDF otimizado**: A4, A3, A2, A1, Carta e
+  Ofício, com o cálculo de quantas folhas serão necessárias mostrado antes
+  de gerar o PDF.
+- **Fidelidade visual do PDF otimizado**: cada página é um recorte do próprio
+  organograma renderizado na tela (não mais um redesenho compacto) — a
+  posição, o tamanho e o estilo de cada caixa ficam idênticos aos da tela.
+  Quando o organograma não cabe em uma única folha, ele sai em várias
+  páginas com uma faixa de sobreposição entre elas, sem reorganizar nada.
+- **"Imprimir / PDF" sempre em 1 folha**: o organograma inteiro sempre cabe
+  em uma única página A4, não importa o tamanho — sem piso de escala. Como
+  o encolhimento é feito via `zoom` do CSS (texto de verdade, não uma
+  imagem), dá para ampliar o PDF gerado sem perder nitidez.
+- **Pastas na tela inicial**: dá para criar pastas para organizar os
+  organogramas, mover organogramas entre pastas (seletor no rodapé de cada
+  card) e navegar para dentro/fora de uma pasta.
 
 ## Arquivos deste pacote
 
 | Arquivo | Para que serve |
 |---|---|
 | `index.html` | O painel em si — é o único arquivo que precisa ser publicado. |
-| `logo-esquerda.png`, `logo-direita.png` | Logos exibidas no cabeçalho. Este pacote já vem com imagens de rascunho (placeholder) só para você confirmar que a troca de arquivo funciona — **substitua pelas logos reais** antes de usar de verdade (veja abaixo). |
+| `logo-esquerda.png`, `logo-direita.png` | Logos exibidas no cabeçalho: Poder Judiciário de Mato Grosso (esquerda) e Fundação Dom Cabral (direita). Para trocar a marca no futuro, basta substituir estes dois arquivos, mantendo os mesmos nomes. |
 | `config.js` | Configuração do Firebase já preenchida com o projeto `painel-organograma`. |
 | `config.example.js` | Modelo em branco, útil se você reaproveitar este painel em outro projeto Firebase. |
 | `firestore.rules` | Regras de segurança do banco de dados (leia a seção de segurança). |
@@ -46,14 +68,14 @@ Firestore como banco de dados na nuvem.
 1. Crie um repositório novo no GitHub (pode ser privado).
 2. Envie todos os arquivos deste pacote para a raiz do repositório
    (`index.html`, `config.js`, `firestore.rules`, `.gitignore` etc.).
-3. Este pacote já inclui `logo-esquerda.png` e `logo-direita.png` — mas são
-   apenas imagens de rascunho (placeholder), para você confirmar que a troca
-   funciona. Substitua os dois arquivos pelas logos reais, mantendo
-   exatamente esses nomes:
+3. Este pacote já inclui as logos reais (`logo-esquerda.png` = Poder
+   Judiciário de Mato Grosso, `logo-direita.png` = Fundação Dom Cabral) na
+   raiz do repositório. Se precisar trocar a marca no futuro, basta
+   substituir esses dois arquivos, mantendo exatamente esses nomes:
    - `logo-esquerda.png`
    - `logo-direita.png`
 
-   Dica: se sua instituição tiver só uma logo, use a mesma imagem nos dois
+   Dica: se um dia precisar de só uma logo, use a mesma imagem nos dois
    arquivos, ou apague um dos dois (o espaço correspondente fica em branco).
 
 ### 2. Ativar o GitHub Pages
@@ -113,20 +135,38 @@ futuro for necessário restringir o acesso, o caminho é:
 Essa mudança não foi feita agora para manter o painel simples de usar, mas
 as regras já estão organizadas para facilitar essa evolução depois.
 
-## Como funciona o novo PDF otimizado (organogramas grandes)
+## Como funciona o PDF otimizado (organogramas grandes)
 
-Quando o organograma é grande demais para caber em uma página com boa
-legibilidade, o botão **PDF otimizado** divide o desenho em várias páginas,
-com uma faixa de sobreposição entre elas (para nenhum cartão ficar cortado
-na borda). Nesta revisão:
+O botão **PDF otimizado** reproduz o organograma exatamente como ele aparece
+na tela — no mesmo tamanho, com o mesmo estilo — e o divide em páginas do
+tamanho de papel escolhido, com uma faixa de sobreposição entre elas (para
+nenhum cartão ficar cortado). Ele **não redesenha nem reorganiza** cartões:
+cada página é um recorte do próprio organograma, então juntar as folhas
+impressas reproduz fielmente o que está na tela.
 
-- **Corrigido**: uma linha de conexão só aparece em uma página se as duas
-  caixas que ela liga também estiverem naquela página — antes, em alguns
-  casos, uma linha podia aparecer "solta", sem uma das pontas.
-- **Novo — página de guia de montagem**: quando o organograma sai em mais
-  de uma página, a primeira folha impressa é um esquema simples mostrando
-  quantas páginas existem e a posição (linha/coluna) de cada uma, numeradas
-  na mesma ordem em que saem da impressora. Use esse esquema para saber
-  como encaixar as folhas antes de recortar e colar/grampear.
+- **Sem reorganização**: a posição de cada unidade no PDF é idêntica à da
+  tela. Organogramas grandes vão gerar mais páginas — essa é a troca: menos
+  compactação, mais fidelidade.
+- **Página de guia de montagem**: quando o organograma sai em mais de uma
+  página, a primeira folha impressa é um esquema simples mostrando quantas
+  páginas existem e a posição (linha/coluna) de cada uma, numeradas na mesma
+  ordem em que saem da impressora. Use esse esquema para saber como encaixar
+  as folhas antes de recortar e colar/grampear.
 - Cada página também traz no rodapé do cabeçalho o texto "Página X de Y —
   Linha R de N, Coluna C de M", a mesma numeração da guia de montagem.
+- **Tamanho de papel selecionável**: antes de gerar o PDF, escolha entre
+  A4, A3, A2, A1, Carta ou Ofício. O painel calcula quantas folhas serão
+  necessárias para aquele tamanho e ajusta a impressão (`@page`) para
+  corresponder fisicamente ao papel escolhido.
+- **Cabeçalho só no topo**: o cabeçalho institucional (logos + título)
+  aparece apenas nas páginas da primeira linha da grade de montagem. As
+  demais páginas trazem só uma numeração discreta no canto, para não
+  interromper visualmente o organograma ao montar as folhas.
+
+## Como funciona o "Imprimir / PDF" (organograma inteiro em 1 folha)
+
+Esse botão sempre gera o organograma inteiro em **uma única página A4**,
+reduzindo a escala conforme necessário — sem limite mínimo. Como a redução é
+feita via `zoom` do CSS (o texto continua sendo texto de verdade, não uma
+imagem), o PDF gerado pode ser ampliado (zoom no leitor de PDF) sem perder
+nitidez, mesmo que o organograma pareça pequeno na visualização inicial.

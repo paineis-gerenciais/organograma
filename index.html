@@ -358,39 +358,6 @@
       z-index: 0;
       pointer-events: none;
     }
-    .optimized-node-card {
-      position: absolute;
-      box-sizing: border-box;
-      z-index: 2;
-      background: #fff;
-      border: 1px solid #cbd5e1;
-      border-radius: 6px;
-      padding: 5px 6px;
-      color: #1e293b;
-      text-align: center;
-      white-space: normal;
-      overflow-wrap: anywhere;
-      word-break: normal;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, .08);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-    }
-    .optimized-node-card.opt-line { border-top: 4px solid #2563eb; }
-    .optimized-node-card.opt-staff { border-left: 4px solid #a855f7; }
-    .optimized-node-name {
-      font-weight: 700;
-      line-height: 1.12;
-      width: 100%;
-    }
-    .optimized-node-sigla {
-      margin-top: 2px;
-      font-weight: 700;
-      color: #64748b;
-      line-height: 1.05;
-      width: 100%;
-    }
     .optimized-print-sheet {
       position: relative;
       width: 100%;
@@ -412,13 +379,11 @@
       margin: 0 auto;
       background: #fff;
     }
-    .optimized-page-connectors {
+    /* Recorte real: cada página mostra uma janela sobre um clone do mesmo
+       organograma renderizado na tela (mesmas classes/CSS), sem redesenhar
+       nada — por isso a posição de cada caixa fica idêntica à da tela. */
+    .opt-real-stage {
       position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-      z-index: 0;
-      pointer-events: none;
     }
     .optimized-page-tag {
       text-align: right;
@@ -686,11 +651,21 @@
         padding: 0 0 1mm !important;
         margin: 0 !important;
       }
-      body.print-optimized .optimized-node-card {
-        box-shadow: none !important;
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
+      /* Preserva EXATAMENTE o espaçamento da tela dentro dos clones do PDF
+         otimizado — as regras gerais de impressão logo acima comprimem esses
+         mesmos seletores para o modo padrão, o que deslocaria as caixas em
+         relação à medição feita na tela (usada para calcular as páginas). */
+      body.print-optimized #optimized-print-page .org-tree {
+        padding: 40px !important;
       }
+      body.print-optimized #optimized-print-page .org-tree li {
+        padding-left: 12px !important;
+        padding-right: 12px !important;
+      }
+      body.print-optimized #optimized-print-page .node-wrapper { padding-top: 20px !important; }
+      body.print-optimized #optimized-print-page .staff-zone { margin-top: 15px !important; }
+      body.print-optimized #optimized-print-page .staff-row { margin-bottom: 14px !important; }
+      body.print-optimized #optimized-print-page .staff-descendants { gap: 10px !important; margin-top: 14px !important; }
 
       /* Imprimir recorte: imprime somente a área selecionada na tela. */
       body.print-crop #canvas-container,
@@ -776,6 +751,8 @@
   <!-- SDK do Firebase, versão "compat" (funciona com tag de script comum, sem bundler) -->
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.13.0/firebase-firestore-compat.js"></script>
+  <!-- jsPDF: usado para gerar o PDF do relatório de consolidação -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 </head>
 <body class="bg-slate-100 text-slate-800">
 
@@ -798,9 +775,14 @@
     
     <main class="flex-1 p-8 max-w-7xl mx-auto w-full">
       <div class="flex justify-between items-center mb-8 border-b border-slate-200 pb-4">
-        <h2 class="text-xl font-bold text-slate-800 flex items-center gap-2">
-          <i class="fa-solid fa-folder-tree text-indigo-500"></i> Meus Organogramas
-        </h2>
+        <div>
+          <div id="dashboard-breadcrumb" class="text-xs mb-1 hidden">
+            <button onclick="openFolder(null)" class="text-indigo-600 font-bold hover:underline"><i class="fa-solid fa-arrow-left mr-1"></i>Meus Organogramas</button>
+          </div>
+          <h2 id="dashboard-title" class="text-xl font-bold text-slate-800 flex items-center gap-2">
+            <i class="fa-solid fa-folder-tree text-indigo-500"></i> Meus Organogramas
+          </h2>
+        </div>
         <div class="flex items-center gap-2 flex-wrap justify-end">
           <button onclick="openCompareModal()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors" title="Comparar dois organogramas">
             <i class="fa-solid fa-code-compare text-violet-600"></i> Comparar organogramas
@@ -812,11 +794,16 @@
           <button onclick="exportAllJSON()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors" title="Exportar todos os organogramas em um único arquivo JSON">
             <i class="fa-solid fa-file-export text-emerald-600"></i> Exportar JSON
           </button>
+          <button onclick="createFolder()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors">
+            <i class="fa-solid fa-folder-plus text-amber-500"></i> Nova Pasta
+          </button>
           <button onclick="openNewChartModal()" class="bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-4 py-2 rounded-lg font-medium text-sm flex items-center gap-2 shadow-sm transition-colors">
             <i class="fa-solid fa-plus"></i> Novo Organograma
           </button>
         </div>
       </div>
+
+      <div id="folders-grid" class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 mb-8"></div>
 
       <div id="charts-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         <!-- Cards gerados pelo JS -->
@@ -995,7 +982,8 @@
       <div id="consolidation-report-body" class="p-6 overflow-y-auto"></div>
       <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
         <button type="button" onclick="closeConsolidationReportModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition-colors">Fechar</button>
-        <button type="button" onclick="downloadConsolidationReport()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm transition-colors flex items-center gap-2"><i class="fa-solid fa-download"></i> Baixar relatório</button>
+        <button type="button" onclick="downloadConsolidationReport()" class="bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-medium text-sm px-4 py-2 rounded-lg shadow-sm transition-colors flex items-center gap-2" title="Baixar como página HTML"><i class="fa-regular fa-file-code"></i> HTML</button>
+        <button type="button" onclick="downloadConsolidationReportPDF()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm transition-colors flex items-center gap-2"><i class="fa-solid fa-file-pdf"></i> Baixar em PDF</button>
       </div>
     </div>
   </div>
@@ -1311,6 +1299,11 @@
     // (localStorage) para funcionar mesmo offline ou sem configuração de nuvem.
     let chartsData = JSON.parse(localStorage.getItem('orgChartsData') || '{}');
 
+    // Pastas para organizar os organogramas na tela inicial. Cada organograma
+    // pode ter um campo opcional "folderId"; sem ele, aparece na raiz.
+    let foldersData = JSON.parse(localStorage.getItem('orgFoldersData') || '{}');
+    let currentFolderId = null;
+
     /* --- INTEGRAÇÃO COM O FIRESTORE ---
        Cada organograma é salvo como um documento na coleção "orgCharts",
        usando o mesmo id já usado internamente (chartsData[id]). O localStorage
@@ -1332,6 +1325,10 @@
       localStorage.setItem('orgChartsData', JSON.stringify(chartsData));
     }
 
+    function persistFoldersCache() {
+      localStorage.setItem('orgFoldersData', JSON.stringify(foldersData));
+    }
+
     async function saveChartToCloud(id) {
       if (!db || !id || !chartsData[id]) return;
       try {
@@ -1351,6 +1348,24 @@
       }
     }
 
+    async function saveFolderToCloud(id) {
+      if (!db || !id || !foldersData[id]) return;
+      try {
+        await db.collection('orgFolders').doc(id).set(foldersData[id]);
+      } catch (e) {
+        console.error('Falha ao sincronizar pasta com a nuvem:', e);
+      }
+    }
+
+    async function deleteFolderFromCloud(id) {
+      if (!db || !id) return;
+      try {
+        await db.collection('orgFolders').doc(id).delete();
+      } catch (e) {
+        console.error('Falha ao excluir pasta da nuvem:', e);
+      }
+    }
+
     // Agrupa gravações rápidas e sucessivas (ex: arrastar um card) em uma
     // única escrita no Firestore, evitando gravações excessivas.
     const _cloudSaveTimers = {};
@@ -1360,20 +1375,94 @@
       _cloudSaveTimers[id] = setTimeout(() => saveChartToCloud(id), 700);
     }
 
+    const _folderCloudTimers = {};
+    function queueFolderCloudSave(id) {
+      if (!db || !id) return;
+      clearTimeout(_folderCloudTimers[id]);
+      _folderCloudTimers[id] = setTimeout(() => saveFolderToCloud(id), 700);
+    }
+
     async function loadChartsFromFirestore() {
       if (!db) return;
       try {
-        const snap = await db.collection('orgCharts').get();
-        if (snap.empty) return; // nada na nuvem ainda; mantém o que já está em cache local
-        const cloudData = {};
-        snap.forEach(doc => { cloudData[doc.id] = doc.data(); });
-        chartsData = cloudData;
-        persistLocalCache();
+        const [chartsSnap, foldersSnap] = await Promise.all([
+          db.collection('orgCharts').get(),
+          db.collection('orgFolders').get()
+        ]);
+        if (!chartsSnap.empty) {
+          const cloudData = {};
+          chartsSnap.forEach(doc => { cloudData[doc.id] = doc.data(); });
+          chartsData = cloudData;
+          persistLocalCache();
+        }
+        if (!foldersSnap.empty) {
+          const cloudFolders = {};
+          foldersSnap.forEach(doc => { cloudFolders[doc.id] = doc.data(); });
+          foldersData = cloudFolders;
+          persistFoldersCache();
+        }
         if (!currentChartId) renderDashboard();
       } catch (e) {
         console.error('Falha ao carregar do Firestore, usando dados locais.', e);
         showToast('Sem conexão com a nuvem — exibindo dados salvos neste navegador.', 'info');
       }
+    }
+
+    /* --- PASTAS DO DASHBOARD --- */
+    function createFolder() {
+      const name = prompt('Nome da nova pasta:');
+      if (!name || !name.trim()) return;
+      const id = `folder-${Date.now()}`;
+      foldersData[id] = { id, name: name.trim(), createdAt: Date.now() };
+      persistFoldersCache();
+      queueFolderCloudSave(id);
+      renderDashboard();
+      showToast('Pasta criada!', 'success');
+    }
+
+    function renameFolder(id) {
+      const folder = foldersData[id];
+      if (!folder) return;
+      const name = prompt('Novo nome da pasta:', folder.name);
+      if (!name || !name.trim()) return;
+      folder.name = name.trim();
+      persistFoldersCache();
+      queueFolderCloudSave(id);
+      renderDashboard();
+    }
+
+    function deleteFolder(id) {
+      const folder = foldersData[id];
+      if (!folder) return;
+      const insideCount = Object.values(chartsData).filter(c => c.folderId === id).length;
+      const msg = insideCount
+        ? `A pasta "${folder.name}" tem ${insideCount} organograma(s). Eles não serão excluídos — só voltam para a lista sem pasta. Excluir a pasta mesmo assim?`
+        : `Excluir a pasta "${folder.name}"?`;
+      if (!confirm(msg)) return;
+      Object.values(chartsData).forEach(c => {
+        if (c.folderId === id) { delete c.folderId; queueCloudSave(c.id); }
+      });
+      persistLocalCache();
+      delete foldersData[id];
+      persistFoldersCache();
+      deleteFolderFromCloud(id);
+      if (currentFolderId === id) currentFolderId = null;
+      renderDashboard();
+      showToast('Pasta excluída.', 'info');
+    }
+
+    function openFolder(id) {
+      currentFolderId = id || null;
+      renderDashboard();
+    }
+
+    function moveChartToFolder(chartId, folderId) {
+      if (!chartsData[chartId]) return;
+      if (folderId) chartsData[chartId].folderId = folderId;
+      else delete chartsData[chartId].folderId;
+      persistLocalCache();
+      queueCloudSave(chartId);
+      renderDashboard();
     }
 
     // Migração de compatibilidade (remover gabinete antigo para assessoria; garantir subtitle)
@@ -2474,6 +2563,96 @@
       document.body.appendChild(a); a.click(); a.remove();
     }
 
+    // Baixa o relatório de consolidação como PDF de verdade (via jsPDF),
+    // com o mesmo cabeçalho institucional (logos + título) usado no restante
+    // do painel.
+    function downloadConsolidationReportPDF(id) {
+      const targetId = id || document.getElementById('consolidation-report-modal')?.dataset.chartId;
+      const chart = chartsData[targetId];
+      if (!chart || !chart.consolidationReport) return;
+      if (!window.jspdf) {
+        showToast('Não foi possível carregar o gerador de PDF. Verifique sua conexão e tente novamente.', 'error');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const marginX = 16;
+      const pageW = doc.internal.pageSize.getWidth();
+      const pageH = doc.internal.pageSize.getHeight();
+      let y = 16;
+
+      // Cabeçalho com as mesmas logos institucionais do painel.
+      const headerEl = document.getElementById('print-header');
+      const logos = headerEl ? headerEl.querySelectorAll('img') : [];
+      const logoH = 12;
+      [logos[0], logos[1]].forEach((img, i) => {
+        if (!img || !img.complete || !img.naturalWidth) return;
+        try {
+          const ratio = img.naturalWidth / img.naturalHeight;
+          const w = logoH * ratio;
+          const x = i === 0 ? marginX : pageW - marginX - w;
+          doc.addImage(img, 'PNG', x, y, w, logoH);
+        } catch (e) { console.error('Falha ao inserir logo no PDF:', e); }
+      });
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(13);
+      doc.setTextColor(30, 41, 59);
+      doc.text('Relatório de consolidação', pageW / 2, y + 5, { align: 'center' });
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text(chart.name || '', pageW / 2, y + 11, { align: 'center' });
+
+      y += logoH + 6;
+      doc.setDrawColor(30, 41, 59);
+      doc.setLineWidth(0.4);
+      doc.line(marginX, y, pageW - marginX, y);
+      y += 6;
+
+      const report = chart.consolidationReport;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(100, 116, 139);
+      const infoLine = `Comparação: ${report.baseName} × ${report.targetName} — gerado em ${new Date(report.generatedAt).toLocaleString('pt-BR')}`;
+      const infoLines = doc.splitTextToSize(infoLine, pageW - marginX * 2);
+      doc.text(infoLines, marginX, y);
+      y += infoLines.length * 4.5 + 5;
+
+      function ensureSpace(height) {
+        if (y + height > pageH - 16) { doc.addPage(); y = 16; }
+      }
+
+      function drawSection(title, colorRgb, items) {
+        if (!items.length) return;
+        ensureSpace(10);
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(colorRgb[0], colorRgb[1], colorRgb[2]);
+        doc.text(`${title} (${items.length})`, marginX, y);
+        y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(30, 41, 59);
+        items.forEach(item => {
+          const lines = doc.splitTextToSize(`•  ${item.text}`, pageW - marginX * 2 - 2);
+          ensureSpace(lines.length * 4.6 + 1);
+          doc.text(lines, marginX + 2, y);
+          y += lines.length * 4.6 + 1.5;
+        });
+        y += 3;
+      }
+
+      drawSection('Aprovadas', [5, 150, 105], report.approved);
+      drawSection('Ajustadas', [217, 119, 6], report.adjusted);
+      drawSection('Rejeitadas', [225, 29, 72], report.rejected);
+      drawSection('Pendentes (não decididas)', [100, 116, 139], report.pending);
+
+      const safeName = (chart.name || 'organograma').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+      doc.save(`relatorio-consolidacao_${safeName}.pdf`);
+    }
+
     function consolidateComparison() {
       if (!comparisonState) return;
       if (!confirm("deseja consolidar o organograma com as alterações aprovadas?")) return;
@@ -2504,12 +2683,63 @@
       } catch (e) { return null; }
     }
 
+    function buildFolderSelectHtml(chart) {
+      const folders = Object.values(foldersData).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+      const options = [`<option value="">Sem pasta</option>`]
+        .concat(folders.map(f => `<option value="${f.id}" ${chart.folderId === f.id ? 'selected' : ''}>${escapeHtml(f.name)}</option>`));
+      return options.join('');
+    }
+
     function renderDashboard() {
       const grid = document.getElementById('charts-grid');
+      const foldersGrid = document.getElementById('folders-grid');
+      const breadcrumb = document.getElementById('dashboard-breadcrumb');
+      const titleEl = document.getElementById('dashboard-title');
       grid.innerHTML = '';
-      
-      for (let id in chartsData) {
-        const chart = chartsData[id];
+      if (foldersGrid) foldersGrid.innerHTML = '';
+
+      // A pasta pode ter sido excluída em outro dispositivo/aba.
+      if (currentFolderId && !foldersData[currentFolderId]) currentFolderId = null;
+      const openFolderObj = currentFolderId ? foldersData[currentFolderId] : null;
+
+      if (breadcrumb) breadcrumb.classList.toggle('hidden', !currentFolderId);
+      if (titleEl) {
+        titleEl.innerHTML = openFolderObj
+          ? `<i class="fa-solid fa-folder-open text-amber-500"></i> ${escapeHtml(openFolderObj.name)}`
+          : `<i class="fa-solid fa-folder-tree text-indigo-500"></i> Meus Organogramas`;
+      }
+
+      // As pastas só aparecem na tela raiz (fora de qualquer pasta aberta).
+      if (!currentFolderId && foldersGrid) {
+        Object.values(foldersData)
+          .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+          .forEach(folder => {
+            const count = Object.values(chartsData).filter(c => c.folderId === folder.id).length;
+            const card = document.createElement('div');
+            card.className = "bg-amber-50 border border-amber-200 rounded-2xl p-4 shadow-sm hover:shadow-md transition-shadow cursor-pointer group flex items-center justify-between gap-2";
+            card.onclick = (e) => { if (!e.target.closest('button')) openFolder(folder.id); };
+            card.innerHTML = `
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-folder text-lg"></i></div>
+                <div class="min-w-0">
+                  <div class="font-bold text-slate-800 text-sm truncate">${escapeHtml(folder.name)}</div>
+                  <div class="text-[11px] text-slate-500">${count} organograma${count !== 1 ? 's' : ''}</div>
+                </div>
+              </div>
+              <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+                <button onclick="event.stopPropagation(); renameFolder('${folder.id}')" class="text-slate-400 hover:text-indigo-600 hover:bg-white w-7 h-7 rounded flex items-center justify-center" title="Renomear pasta"><i class="fa-regular fa-pen-to-square text-xs"></i></button>
+                <button onclick="event.stopPropagation(); deleteFolder('${folder.id}')" class="text-slate-400 hover:text-rose-500 hover:bg-white w-7 h-7 rounded flex items-center justify-center" title="Excluir pasta"><i class="fa-solid fa-trash-can text-xs"></i></button>
+              </div>
+            `;
+            foldersGrid.appendChild(card);
+          });
+      }
+
+      const visibleEntries = Object.entries(chartsData).filter(([, chart]) =>
+        currentFolderId ? chart.folderId === currentFolderId : !chart.folderId
+      );
+
+      for (const [id, chart] of visibleEntries) {
         const all = getAllNodesList(chart.root);
         const count = all.length;
         const servers = all.reduce((sum, n) => sum + (Number(n.serversCount) || 0), 0);
@@ -2518,7 +2748,7 @@
         
         const card = document.createElement('div');
         card.className = "bg-white border border-slate-200 rounded-2xl p-6 shadow-sm hover:shadow-md transition-shadow cursor-pointer relative group flex flex-col h-full";
-        card.onclick = (e) => { if(!e.target.closest('button')) openChart(id); };
+        card.onclick = (e) => { if(!e.target.closest('button') && !e.target.closest('select')) openChart(id); };
         
         card.innerHTML = `
           <div class="flex-1">
@@ -2542,9 +2772,11 @@
               </button>
             ` : ''}
           </div>
-          <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between">
-            <span class="text-xs font-bold text-indigo-600 flex items-center gap-1 group-hover:translate-x-1 transition-transform">Abrir <i class="fa-solid fa-arrow-right"></i></span>
-            <div class="flex items-center gap-1">
+          <div class="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between gap-2">
+            <select onclick="event.stopPropagation()" onchange="moveChartToFolder('${id}', this.value)" class="text-[10.5px] border border-slate-200 rounded-lg px-1.5 py-1.5 text-slate-500 bg-white max-w-[110px] focus:outline-none focus:ring-2 focus:ring-indigo-500" title="Mover para pasta">
+              ${buildFolderSelectHtml(chart)}
+            </select>
+            <div class="flex items-center gap-1 shrink-0">
               <button onclick="event.stopPropagation(); duplicateChart('${id}')" class="text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 w-8 h-8 rounded flex items-center justify-center transition-colors" title="Duplicar organograma">
                 <i class="fa-regular fa-copy text-sm"></i>
               </button>
@@ -2600,6 +2832,7 @@
       const newId = Date.now().toString();
       chartsData[newId] = {
         id: newId, name: title, subtitle: subtitle, updatedAt: Date.now(),
+        ...(currentFolderId ? { folderId: currentFolderId } : {}),
         root: { id: `root-${newId}`, name: "Nova Organização", type: "linha", serversCount: 0, description: "", children: [] }
       };
       
@@ -3401,24 +3634,19 @@
       const logicalWidth = Math.max(1, (bounds.right - bounds.left) / currentZoom);
       const logicalHeight = Math.max(1, (bounds.bottom - bounds.top) / currentZoom);
 
-      /* Área útil aproximada de A4 paisagem com o cabeçalho compacto. */
-      const targetWidth = 1045;
-      const targetHeight = 635;
-      const scale = Math.max(0.36, Math.min(1, targetWidth / logicalWidth, targetHeight / logicalHeight));
+      /* Área útil real de uma folha A4 paisagem, já descontando a margem
+         física e o cabeçalho (mesmo cálculo usado no PDF otimizado). Sem piso
+         de escala: o organograma inteiro SEMPRE cabe em uma única folha, por
+         maior que seja. Como o encolhimento aqui é feito via `zoom` (CSS),
+         o texto continua sendo renderizado como texto de verdade — e não uma
+         imagem — então dá para ampliar o PDF sem perder nitidez. */
+      const { targetWidth, targetHeightTop } = getOptimizedPaperMetrics('A4');
+      const scale = Math.min(1, targetWidth / logicalWidth, targetHeightTop / logicalHeight);
 
-      root.style.setProperty('--print-scale', scale.toFixed(3));
+      root.style.setProperty('--print-scale', Math.max(0.02, scale).toFixed(4));
     }
 
     /* ---------- Layout automático do PDF otimizado ---------- */
-    const OPT_PRINT = {
-      gapX: 10,
-      gapY: 11,
-      levelGap: 19,
-      sideGap: 20,
-      padding: 8,
-      targetAspect: 2.0
-    };
-
     // Tamanhos de papel disponíveis para o PDF otimizado (mm, já em orientação
     // paisagem). 1mm equivale a 96/25.4 px CSS — essa é a mesma conversão que
     // o navegador usa para @page/impressão, então o resultado impresso
@@ -3450,215 +3678,37 @@
     }
 
 
-    function estimateWrappedLines(text, charsPerLine) {
-      const value = String(text || '').trim();
-      if (!value) return 1;
-      const words = value.split(/\s+/);
-      let lines = 1;
-      let used = 0;
-      for (const word of words) {
-        if (word.length > charsPerLine) {
-          if (used > 0) { lines++; used = 0; }
-          lines += Math.max(0, Math.ceil(word.length / charsPerLine) - 1);
-          used = word.length % charsPerLine;
-          continue;
-        }
-        const needed = used === 0 ? word.length : word.length + 1;
-        if (used + needed > charsPerLine) {
-          lines++;
-          used = word.length;
-        } else {
-          used += needed;
-        }
-      }
-      return Math.max(1, lines);
-    }
-
-    function getOptimizedCardMetrics(node) {
-      const name = String(node?.name || 'Sem nome');
-      const sigla = String(node?.sigla || '').trim();
-      const len = name.length;
-
-      /* O PDF otimizado prioriza legibilidade. As caixas podem crescer e o
-         organograma pode ocupar várias páginas, em vez de reduzir a fonte a
-         tamanhos excessivamente pequenos. */
-      let width = len <= 26 ? 138 : len <= 48 ? 156 : len <= 72 ? 172 : 188;
-      if (node?.type === 'assessoria') width = Math.max(134, width - 4);
-
-      const fontSize = len > 96 ? 8.8 : len > 70 ? 9.1 : 9.5;
-      const charsPerLine = Math.max(14, Math.floor((width - 16) / 6.4));
-      const nameLines = estimateWrappedLines(name, charsPerLine);
-      const siglaLines = sigla ? estimateWrappedLines(sigla, Math.max(11, charsPerLine - 2)) : 0;
-      const nameLineHeight = fontSize * 1.18;
-      const siglaLineHeight = Math.max(7.8, (fontSize - .8) * 1.12);
-      const height = Math.max(42, 15 + nameLines * nameLineHeight + (siglaLines ? siglaLines * siglaLineHeight + 3 : 0));
-      return { width, height: Math.ceil(height), fontSize };
-    }
-
-    function optimizedLayoutScore(width, height, occupiedArea) {
-      const area = Math.max(1, width * height);
-      const ratio = Math.max(0.05, width / Math.max(1, height));
-      const aspectPenalty = Math.abs(Math.log(ratio / OPT_PRINT.targetAspect));
-      const emptyArea = Math.max(0, area - occupiedArea);
-      // Área total pesa mais; o termo de vazio favorece encaixes densos e o de aspecto
-      // evita árvores extremamente largas ou altas quando há alternativas equivalentes.
-      return area + emptyArea * 0.20 + area * aspectPenalty * 0.36;
-    }
-
-    function packOptimizedRows(childLayouts, maxRowWidth) {
-      const rows = [];
-      let row = { items: [], width: 0, height: 0 };
-      childLayouts.forEach((layout) => {
-        const add = row.items.length ? OPT_PRINT.gapX : 0;
-        if (row.items.length && row.width + add + layout.width > maxRowWidth) {
-          rows.push(row);
-          row = { items: [], width: 0, height: 0 };
-        }
-        row.items.push(layout);
-        row.width += (row.items.length > 1 ? OPT_PRINT.gapX : 0) + layout.width;
-        row.height = Math.max(row.height, layout.height);
-      });
-      if (row.items.length) rows.push(row);
-      return rows;
-    }
-
-    function createTopDownOptimizedCandidate(card, childLayouts, rowLimit) {
-      const rows = packOptimizedRows(childLayouts, rowLimit);
-      const groupWidth = Math.max(...rows.map(r => r.width), 0);
-      const groupHeight = rows.reduce((sum, r) => sum + r.height, 0) + Math.max(0, rows.length - 1) * OPT_PRINT.gapY;
-      const width = Math.max(card.width, groupWidth) + OPT_PRINT.padding * 2;
-      const height = card.height + OPT_PRINT.levelGap + groupHeight + OPT_PRINT.padding * 2;
-      const placements = [];
-      let y = OPT_PRINT.padding + card.height + OPT_PRINT.levelGap;
-      rows.forEach(row => {
-        let x = (width - row.width) / 2;
-        row.items.forEach(layout => {
-          placements.push({ layout, x, y });
-          x += layout.width + OPT_PRINT.gapX;
-        });
-        y += row.height + OPT_PRINT.gapY;
-      });
-      const cardX = (width - card.width) / 2;
-      const cardY = OPT_PRINT.padding;
-      return { width, height, cardX, cardY, placements, mode: 'top' };
-    }
-
-    function createSideOptimizedCandidate(card, childLayouts) {
-      const groupWidth = Math.max(...childLayouts.map(c => c.width), 0);
-      const groupHeight = childLayouts.reduce((sum, c) => sum + c.height, 0) + Math.max(0, childLayouts.length - 1) * OPT_PRINT.gapY;
-      const innerHeight = Math.max(card.height, groupHeight);
-      const width = OPT_PRINT.padding * 2 + card.width + OPT_PRINT.sideGap + groupWidth;
-      const height = OPT_PRINT.padding * 2 + innerHeight;
-      const cardX = OPT_PRINT.padding;
-      const cardY = OPT_PRINT.padding + (innerHeight - card.height) / 2;
-      const placements = [];
-      let y = OPT_PRINT.padding + (innerHeight - groupHeight) / 2;
-      childLayouts.forEach(layout => {
-        placements.push({ layout, x: OPT_PRINT.padding + card.width + OPT_PRINT.sideGap, y });
-        y += layout.height + OPT_PRINT.gapY;
-      });
-      return { width, height, cardX, cardY, placements, mode: 'side' };
-    }
-
-    function buildOptimizedLayout(node, depth = 1) {
-      const card = getOptimizedCardMetrics(node);
-      const children = (node.children || []).map(child => buildOptimizedLayout(child, depth + 1));
-
-      if (!children.length) {
+    function getRealTreeCardBoxes() {
+      const root = document.getElementById('tree-root');
+      if (!root) return null;
+      const rootRect = root.getBoundingClientRect();
+      const z = zoomLevel || 1;
+      const cards = Array.from(root.querySelectorAll('.node-card'));
+      if (!cards.length) return null;
+      return cards.map(el => {
+        const r = el.getBoundingClientRect();
         return {
-          node, depth, card,
-          width: card.width + OPT_PRINT.padding * 2,
-          height: card.height + OPT_PRINT.padding * 2,
-          cardX: OPT_PRINT.padding,
-          cardY: OPT_PRINT.padding,
-          placements: [], mode: 'leaf'
+          x: (r.left - rootRect.left) / z,
+          y: (r.top - rootRect.top) / z,
+          w: r.width / z,
+          h: r.height / z
         };
-      }
-
-      const totalChildArea = children.reduce((sum, c) => sum + c.width * c.height, 0);
-      const occupiedArea = totalChildArea + card.width * card.height;
-      const totalRowWidth = children.reduce((sum, c) => sum + c.width, 0) + OPT_PRINT.gapX * Math.max(0, children.length - 1);
-      const maxChildWidth = Math.max(...children.map(c => c.width));
-      const ideal = Math.max(maxChildWidth, Math.sqrt(Math.max(1, totalChildArea) * OPT_PRINT.targetAspect));
-
-      const rowLimits = [...new Set([
-        maxChildWidth,
-        ideal * 0.68,
-        ideal * 0.86,
-        ideal,
-        ideal * 1.22,
-        ideal * 1.5,
-        totalRowWidth
-      ].map(v => Math.max(maxChildWidth, Math.min(totalRowWidth, Math.round(v)))))];
-
-      const candidates = rowLimits.map(limit => createTopDownOptimizedCandidate(card, children, limit));
-      // Ramos pequenos e cadeias também concorrem com a disposição lateral, semelhante
-      // ao tratamento visual de assessorias, porque isso costuma eliminar grandes vazios.
-      if (children.length <= 6) candidates.push(createSideOptimizedCandidate(card, children));
-
-      let best = candidates[0];
-      let bestScore = optimizedLayoutScore(best.width, best.height, occupiedArea);
-      for (let i = 1; i < candidates.length; i++) {
-        const candidate = candidates[i];
-        const score = optimizedLayoutScore(candidate.width, candidate.height, occupiedArea);
-        if (score < bestScore) {
-          best = candidate;
-          bestScore = score;
-        }
-      }
-
-      return { node, depth, card, ...best };
-    }
-
-    function flattenOptimizedLayout(layout, offsetX = 0, offsetY = 0, nodes = [], edges = []) {
-      const cardBox = {
-        x: offsetX + layout.cardX,
-        y: offsetY + layout.cardY,
-        w: layout.card.width,
-        h: layout.card.height
-      };
-      nodes.push({ node: layout.node, depth: layout.depth, card: layout.card, box: cardBox });
-
-      layout.placements.forEach(p => {
-        const childOffsetX = offsetX + p.x;
-        const childOffsetY = offsetY + p.y;
-        const childCard = {
-          x: childOffsetX + p.layout.cardX,
-          y: childOffsetY + p.layout.cardY,
-          w: p.layout.card.width,
-          h: p.layout.card.height
-        };
-        edges.push({ parent: cardBox, child: childCard, mode: layout.mode, parentId: layout.node.id, childId: p.layout.node.id });
-        flattenOptimizedLayout(p.layout, childOffsetX, childOffsetY, nodes, edges);
       });
-      return { nodes, edges };
     }
 
-    function optimizedConnectorPath(edge) {
-      const p = edge.parent;
-      const c = edge.child;
-      const pCenterX = p.x + p.w / 2;
-      const pCenterY = p.y + p.h / 2;
-      const cCenterX = c.x + c.w / 2;
-      const cCenterY = c.y + c.h / 2;
-
-      if (edge.mode === 'side') {
-        const startX = p.x + p.w;
-        const endX = c.x;
-        const midX = startX + Math.max(5, (endX - startX) / 2);
-        return `M ${startX} ${pCenterY} H ${midX} V ${cCenterY} H ${endX}`;
-      }
-
-      const startY = p.y + p.h;
-      const endY = c.y;
-      const midY = startY + Math.max(5, Math.min(12, (endY - startY) / 2));
-      return `M ${pCenterX} ${startY} V ${midY} H ${cCenterX} V ${endY}`;
-    }
-
-    function getOptimizedPrintData() {
-      if (!orgTree) return null;
-      const layout = buildOptimizedLayout(orgTree, 1);
-      return { layout, ...flattenOptimizedLayout(layout) };
+    // Mede o retângulo real ocupado pelo organograma na tela (zoom 1, tudo
+    // expandido), com uma pequena folga ao redor. É essa medida — não um
+    // recálculo de layout — que baliza a paginação do PDF otimizado, para
+    // que a posição de cada caixa fique idêntica à da tela.
+    function getRealTreeContentBounds() {
+      const boxes = getRealTreeCardBoxes();
+      if (!boxes || !boxes.length) return null;
+      const pad = 14;
+      const minX = Math.min(...boxes.map(b => b.x)) - pad;
+      const minY = Math.min(...boxes.map(b => b.y)) - pad;
+      const maxX = Math.max(...boxes.map(b => b.x + b.w)) + pad;
+      const maxY = Math.max(...boxes.map(b => b.y + b.h)) + pad;
+      return { boxes, minX, minY, width: maxX - minX, height: maxY - minY };
     }
 
     function getOptimizedPageStarts(total, viewSize, overlap) {
@@ -3692,82 +3742,53 @@
       return starts;
     }
 
-    // Reúne todo o cálculo de paginação (sem tocar no DOM), para ser usado
-    // tanto na prévia "serão necessárias N página(s)" quanto na renderização
-    // final — assim os dois nunca ficam dessincronizados.
-    function computeOptimizedTiling(paperKey) {
-      const data = getOptimizedPrintData();
-      if (!data) return null;
-      const { layout, nodes, edges } = data;
+    function boxIntersectsTile(box, tile) {
+      return box.x < tile.viewX + tile.viewW && box.x + box.w > tile.viewX &&
+             box.y < tile.viewY + tile.viewH && box.y + box.h > tile.viewY;
+    }
+
+    // Reparte o organograma REAL da tela (sem recalcular posições, sem
+    // encolher) em páginas do tamanho de papel escolhido. Cada página é uma
+    // janela recortada sobre o mesmo desenho da tela — por isso a posição
+    // de cada caixa no PDF é idêntica à da tela. Quando não cabe em uma
+    // única folha, o organograma sai em várias, com uma faixa de
+    // sobreposição entre elas para permitir montá-las depois.
+    function computeRealTreeTiling(paperKey) {
+      const bounds = getRealTreeContentBounds();
+      if (!bounds) return null;
+      const { boxes, minX, minY, width, height } = bounds;
       const { targetWidth, targetHeightTop, targetHeightOther } = getOptimizedPaperMetrics(paperKey);
 
-      /* O piso de escala evita o efeito de “miniatura”. Se a árvore exigir uma
-         redução maior do que 25%, o conteúdo é repartido entre páginas. Como
-         a única página avulsa sempre tem cabeçalho, o teste de caber-em-uma-
-         página usa a altura útil já descontada do cabeçalho. */
-      const minReadableScale = 0.75;
-      const singlePageFit = Math.min(1, targetWidth / layout.width, targetHeightTop / layout.height);
-      const scale = singlePageFit >= minReadableScale ? singlePageFit : minReadableScale;
+      const logicalViewW = targetWidth;
+      const logicalViewHTop = targetHeightTop;
+      const logicalViewHOther = targetHeightOther;
 
-      const logicalViewW = targetWidth / scale;
-      const logicalViewHTop = targetHeightTop / scale;
-      const logicalViewHOther = targetHeightOther / scale;
+      const maxCardW = Math.max(...boxes.map(b => b.w), 0);
+      const maxCardH = Math.max(...boxes.map(b => b.h), 0);
+      const overlapX = Math.min(logicalViewW * .22, maxCardW + 40);
+      const overlapY = Math.min(logicalViewHOther * .22, maxCardH + 40);
 
-      const maxCardW = Math.max(...nodes.map(n => n.box.w), 0);
-      const maxCardH = Math.max(...nodes.map(n => n.box.h), 0);
-      const overlapX = Math.min(logicalViewW * .30, maxCardW + 34);
-      const overlapY = Math.min(logicalViewHOther * .30, maxCardH + 34);
-
-      const xStarts = getOptimizedPageStarts(layout.width, logicalViewW, overlapX);
-      const yStarts = getOptimizedRowStarts(layout.height, logicalViewHTop, logicalViewHOther, overlapY);
+      const xStarts = getOptimizedPageStarts(width, logicalViewW, overlapX);
+      const yStarts = getOptimizedRowStarts(height, logicalViewHTop, logicalViewHOther, overlapY);
 
       const tiles = [];
-      yStarts.forEach((viewY, rowIndex) => {
-        const rowLogicalH = rowIndex === 0 ? logicalViewHTop : logicalViewHOther;
-        xStarts.forEach((viewX, colIndex) => {
-          const viewW = Math.min(logicalViewW, layout.width - viewX);
-          const viewH = Math.min(rowLogicalH, layout.height - viewY);
-          const pageNodes = nodes.filter(({ box }) =>
-            box.x >= viewX - 0.1 && box.y >= viewY - 0.1 &&
-            box.x + box.w <= viewX + viewW + 0.1 &&
-            box.y + box.h <= viewY + viewH + 0.1
-          );
-          if (!pageNodes.length) return;
-
-          // Uma linha só é desenhada nesta página se AMBAS as caixas que ela liga
-          // também estiverem presentes aqui — evita conectores "soltos" apontando
-          // para um cartão que ficou em outra página.
-          const idsHere = new Set(pageNodes.map(n => n.node.id));
-          const pageEdges = edges.filter(edge => idsHere.has(edge.parentId) && idsHere.has(edge.childId));
-
-          tiles.push({ viewX, viewY, viewW, viewH, rowIndex, colIndex, pageNodes, pageEdges });
+      yStarts.forEach((y, rowIndex) => {
+        const rowH = rowIndex === 0 ? logicalViewHTop : logicalViewHOther;
+        xStarts.forEach((x, colIndex) => {
+          const viewW = Math.min(logicalViewW, width - x);
+          const viewH = Math.min(rowH, height - y);
+          const tile = { viewX: minX + x, viewY: minY + y, viewW, viewH, rowIndex, colIndex };
+          // Só gera a página se algum cartão realmente aparecer nela — evita
+          // folhas em branco em árvores com formato irregular.
+          if (boxes.some(b => boxIntersectsTile(b, tile))) tiles.push(tile);
         });
       });
 
-      // Salvaguarda: se algum cartão não coube em nenhuma página (layouts muito
-      // irregulares), cria uma página extra só para ele em vez de omiti-lo.
-      const coveredIds = new Set();
-      tiles.forEach(t => t.pageNodes.forEach(n => coveredIds.add(n.node.id)));
-      const missingNodes = nodes.filter(n => !coveredIds.has(n.node.id));
-      if (missingNodes.length) {
-        const minX = Math.min(...missingNodes.map(n => n.box.x));
-        const minY = Math.min(...missingNodes.map(n => n.box.y));
-        const maxX = Math.max(...missingNodes.map(n => n.box.x + n.box.w));
-        const maxY = Math.max(...missingNodes.map(n => n.box.y + n.box.h));
-        const idsHere = new Set(missingNodes.map(n => n.node.id));
-        tiles.push({
-          viewX: minX, viewY: minY, viewW: maxX - minX, viewH: maxY - minY,
-          rowIndex: yStarts.length, colIndex: 0,
-          pageNodes: missingNodes,
-          pageEdges: edges.filter(edge => idsHere.has(edge.parentId) && idsHere.has(edge.childId))
-        });
-      }
-
       const usedRows = [...new Set(tiles.map(t => t.rowIndex))].sort((a, b) => a - b);
       const usedCols = [...new Set(tiles.map(t => t.colIndex))].sort((a, b) => a - b);
-
-      return { layout, scale, tiles, usedRows, usedCols };
+      return { tiles, usedRows, usedCols };
     }
+
 
     // Atualiza o texto "será impresso em N página(s)" no modal de PDF
     // otimizado sempre que o organograma ou o tamanho de papel mudam.
@@ -3776,20 +3797,43 @@
       const info = document.getElementById('optimized-paper-info');
       if (!select || !info) return;
       selectedOptimizedPaper = select.value;
-      const result = computeOptimizedTiling(selectedOptimizedPaper);
+      if (!orgTree) { info.textContent = 'Abra um organograma para calcular as páginas.'; return; }
+      const result = computeRealTreeTiling(selectedOptimizedPaper);
       if (!result) { info.textContent = 'Abra um organograma para calcular as páginas.'; return; }
       const { tiles, usedRows, usedCols } = result;
       const paperLabel = OPTIMIZED_PAPER_SIZES[selectedOptimizedPaper]?.label || selectedOptimizedPaper;
       if (tiles.length <= 1) {
-        info.innerHTML = `Esse organograma cabe em <strong>1 página</strong> ${paperLabel}, na orientação paisagem.`;
+        info.innerHTML = `Esse organograma cabe em <strong>1 página</strong> ${paperLabel}, na orientação paisagem, no tamanho exato da tela.`;
       } else {
-        info.innerHTML = `Esse organograma será dividido em <strong>${tiles.length} páginas</strong> ${paperLabel} (grade de ${usedRows.length} linha${usedRows.length > 1 ? 's' : ''} × ${usedCols.length} coluna${usedCols.length > 1 ? 's' : ''}), incluindo uma folha extra com o guia de montagem.`;
+        info.innerHTML = `Esse organograma será dividido em <strong>${tiles.length} páginas</strong> ${paperLabel} (grade de ${usedRows.length} linha${usedRows.length > 1 ? 's' : ''} × ${usedCols.length} coluna${usedCols.length > 1 ? 's' : ''}), no tamanho exato da tela (sem reduzir ou reorganizar os cartões), incluindo uma folha extra com o guia de montagem.`;
       }
+    }
+
+    // Enquanto o modal de PDF otimizado está aberto, o organograma fica todo
+    // expandido (é preciso medir a árvore completa). O estado de recolhido
+    // de antes de abrir o modal é guardado aqui e devolvido ao fechar —
+    // seja por "Cancelar" ou depois de realmente imprimir.
+    let _optimizedModalCollapsedBackup = null;
+
+    function ensureOptimizedTreeExpanded() {
+      if (_optimizedModalCollapsedBackup) return;
+      _optimizedModalCollapsedBackup = new Set(collapsedNodes);
+      collapsedNodes.clear();
+      renderApp();
+    }
+
+    function restoreCollapsedAfterOptimizedModal() {
+      if (!_optimizedModalCollapsedBackup) return;
+      collapsedNodes = _optimizedModalCollapsedBackup;
+      _optimizedModalCollapsedBackup = null;
+      renderApp();
     }
 
     function openOptimizedPrintModal() {
       const modal = document.getElementById('optimized-print-modal');
+      if (!orgTree) { showToast('Abra um organograma primeiro.', 'error'); return; }
       if (!modal) { triggerOptimizedPrint(); return; }
+      ensureOptimizedTreeExpanded();
       const select = document.getElementById('optimized-paper-select');
       if (select) select.value = selectedOptimizedPaper;
       modal.classList.remove('hidden');
@@ -3800,6 +3844,7 @@
     function closeOptimizedPrintModal() {
       const modal = document.getElementById('optimized-print-modal');
       if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
+      restoreCollapsedAfterOptimizedModal();
     }
 
     // Página extra (só aparece quando o organograma sai em mais de uma folha):
@@ -3854,13 +3899,16 @@
 
     function renderOptimizedPrintPages(paperKey) {
       const host = document.getElementById('optimized-print-page');
-      if (!host) return null;
+      if (!host || !orgTree) return null;
       host.innerHTML = '';
 
+      const root = document.getElementById('tree-root');
+      if (!root) return null;
+
       const effectivePaper = paperKey || selectedOptimizedPaper;
-      const result = computeOptimizedTiling(effectivePaper);
+      const result = computeRealTreeTiling(effectivePaper);
       if (!result) return null;
-      const { layout, scale, tiles, usedRows, usedCols } = result;
+      const { tiles, usedRows, usedCols } = result;
 
       const chart = currentChartId ? chartsData[currentChartId] : null;
       const standardHeader = document.getElementById('print-header');
@@ -3872,9 +3920,7 @@
       }
 
       tiles.forEach((tile, index) => {
-        const { viewX, viewY, viewW, viewH, rowIndex, colIndex, pageNodes, pageEdges } = tile;
-        const renderedW = Math.max(1, viewW * scale);
-        const renderedH = Math.max(1, viewH * scale);
+        const { viewX, viewY, viewW, viewH, rowIndex, colIndex } = tile;
         const isTopRow = rowIndex === 0;
 
         const sheet = document.createElement('section');
@@ -3910,45 +3956,48 @@
           sheet.appendChild(tag);
         }
 
+        // Cada página é uma "janela" recortada sobre um clone do organograma
+        // real da tela — não um redesenho. Por isso a posição de cada caixa
+        // fica idêntica à da tela; o único ajuste é a janela de recorte e a
+        // sobreposição entre páginas vizinhas, para permitir montá-las depois.
         const viewport = document.createElement('div');
         viewport.className = 'optimized-page-viewport';
-        viewport.style.width = `${renderedW}px`;
-        viewport.style.height = `${renderedH}px`;
+        viewport.style.width = `${Math.ceil(viewW)}px`;
+        viewport.style.height = `${Math.ceil(viewH)}px`;
 
-        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        svg.setAttribute('class', 'optimized-page-connectors');
-        svg.setAttribute('viewBox', `0 0 ${renderedW} ${renderedH}`);
-        svg.innerHTML = `<g transform="translate(${-viewX * scale} ${-viewY * scale}) scale(${scale})">${pageEdges.map(edge =>
-          `<path d="${optimizedConnectorPath(edge)}" fill="none" stroke="#94a3b8" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>`
-        ).join('')}</g>`;
-        viewport.appendChild(svg);
+        const stage = document.createElement('div');
+        stage.className = 'opt-real-stage';
+        stage.style.left = `${-viewX}px`;
+        stage.style.top = `${-viewY}px`;
 
-        pageNodes.forEach(({ node, card, box }) => {
-          const el = document.createElement('div');
-          el.className = `optimized-node-card ${node.type === 'assessoria' ? 'opt-staff' : 'opt-line'}`;
-          el.style.left = `${(box.x - viewX) * scale}px`;
-          el.style.top = `${(box.y - viewY) * scale}px`;
-          el.style.width = `${box.w * scale}px`;
-          el.style.height = `${box.h * scale}px`;
-          el.style.padding = `${Math.max(4, 5 * scale)}px ${Math.max(5, 6 * scale)}px`;
-          const nameSize = card.fontSize * scale;
-          const sigla = escapeHtml(node.sigla || '');
-          el.innerHTML = `
-            <div class="optimized-node-name" style="font-size:${nameSize}px">${escapeHtml(node.name || 'Sem nome')}</div>
-            ${sigla ? `<div class="optimized-node-sigla" style="font-size:${Math.max(6.6, (card.fontSize - .8) * scale)}px">${sigla}</div>` : ''}
-          `;
-          viewport.appendChild(el);
+        const clone = root.cloneNode(true);
+        clone.removeAttribute('id');
+        clone.querySelectorAll('[id]').forEach(el => el.removeAttribute('id'));
+        clone.querySelectorAll('[draggable]').forEach(el => el.removeAttribute('draggable'));
+        clone.querySelectorAll('button').forEach(el => el.remove());
+        // Remove estados visuais interativos (seleção, busca, hover) dos
+        // cartões — além de indesejados num documento final, alguns deles
+        // (como o leve "scale" do card selecionado) deslocariam ligeiramente
+        // a posição da caixa em relação ao que foi medido na tela.
+        clone.querySelectorAll('.node-card').forEach(el => {
+          el.classList.remove(
+            'ring-2', 'ring-4', 'ring-indigo-500', 'ring-amber-400',
+            'shadow-xl', 'scale-[1.02]', 'bg-amber-50', 'bg-indigo-50/30',
+            'drag-over', 'dragging'
+          );
         });
+        stage.appendChild(clone);
+        viewport.appendChild(stage);
 
         sheet.appendChild(viewport);
         host.appendChild(sheet);
       });
 
-      return { layout, pages: totalPages, scale };
+      return { pages: totalPages };
     }
 
     // Ajusta o @page do navegador para o tamanho físico de papel escolhido
-    // (em mm, paisagem), garantindo que a escala calculada em computeOptimizedTiling
+    // (em mm, paisagem), garantindo que a escala calculada em computeRealTreeTiling
     // corresponda de fato ao papel que sai da impressora.
     function applyOptimizedPageSize(paperKey) {
       const paper = OPTIMIZED_PAPER_SIZES[paperKey] || OPTIMIZED_PAPER_SIZES.A4;
@@ -4172,11 +4221,10 @@
 
     function triggerOptimizedPrint(paperKey) {
       if (paperKey) selectedOptimizedPaper = paperKey;
-      closeOptimizedPrintModal();
-      const collapsedBackup = new Set(collapsedNodes);
+      const modal = document.getElementById('optimized-print-modal');
+      if (modal) { modal.classList.add('hidden'); modal.classList.remove('flex'); }
       hideUnitTooltip();
-      collapsedNodes.clear();
-      renderApp();
+      ensureOptimizedTreeExpanded();
       document.body.classList.remove('print-crop');
       document.body.classList.add('print-optimized');
       applyOptimizedPageSize(selectedOptimizedPaper);
@@ -4188,8 +4236,7 @@
           window.print();
           document.body.classList.remove('print-optimized');
           clearOptimizedPageSize();
-          collapsedNodes = collapsedBackup;
-          renderApp();
+          restoreCollapsedAfterOptimizedModal();
         }, 220);
       });
     }
@@ -4202,6 +4249,11 @@
       document.body.classList.remove('print-crop');
       collapsedNodes.clear();
       renderApp();
+      // Fixa o tamanho físico do papel em A4 paisagem, o mesmo usado no
+      // cálculo de updatePrintScale — garante que o organograma realmente
+      // caiba em UMA folha, e não apenas se aproxime de um tamanho padrão
+      // que pode variar conforme a impressora/navegador.
+      applyOptimizedPageSize('A4');
 
       requestAnimationFrame(() => {
         preparePrintDetails();
@@ -4209,6 +4261,7 @@
 
         setTimeout(() => {
           window.print();
+          clearOptimizedPageSize();
 
           /* Retorna a visualização ao estado anterior depois que a janela de impressão fecha. */
           collapsedNodes = collapsedBackup;
