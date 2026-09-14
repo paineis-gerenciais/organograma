@@ -3403,12 +3403,15 @@
         const childCenterY = c.y - originY + c.h / 2;
 
         if (parentType !== 'assessoria') {
+          // A dobra fica na própria altura da assessoria (não numa distância
+          // fixa do pai): mover a caixa na vertical desloca onde, ao longo
+          // da linha central que desce do pai, o galho horizontal sai; mover
+          // na horizontal só estica/encolhe esse galho.
           const parentCenterX = p.x - originX + p.w / 2;
           const parentBottomY = p.y - originY + p.h;
           const side = childCenterX < parentCenterX ? 'left' : 'right';
           const childEdgeX = side === 'left' ? (c.x - originX + c.w) : (c.x - originX);
-          const bendY = parentBottomY + LAYOUT_CONNECTOR_BEND_GAP;
-          return `M ${parentCenterX} ${parentBottomY} L ${parentCenterX} ${bendY} L ${childEdgeX} ${bendY} L ${childEdgeX} ${childCenterY}`;
+          return `M ${parentCenterX} ${parentBottomY} L ${parentCenterX} ${childCenterY} L ${childEdgeX} ${childCenterY}`;
         }
 
         const parentCenterX = p.x - originX + p.w / 2;
@@ -3555,84 +3558,120 @@
     // (vertical) quanto entre caixas vizinhas dentro da mesma linha
     // (horizontal). Nunca aumenta um vão nem muda a ordem/agrupamento que já
     // existe — só aproxima o que estiver espaçado demais.
-    // "Otimizar": reduz espaços vazios excessivos SEM recalcular o layout do
-    // zero — agrupa as caixas em "linhas" pela sobreposição vertical atual,
-    // fecha os vãos maiores do que o mínimo confortável (vertical entre
-    // linhas, horizontal entre vizinhas na mesma linha) e, como critério
-    // adicional, aproxima cada caixa (exceto assessorias, que ficam
-    // deliberadamente ao lado do pai) da posição horizontal do seu pai —
-    // encurtando a linha de conexão — sem nunca sobrepor as vizinhas nem
-    // mudar a ordem esquerda-direita já compactada.
+    // "Otimizar": recalcula a posição de tudo a partir da hierarquia, com um
+    // algoritmo de árvore compacta — o objetivo é reduzir a área total que o
+    // organograma ocupa, podendo mudar linhas e vizinhos (não é mais uma
+    // simples compactação de vãos). Unidades do tipo linha ficam empilhadas
+    // embaixo do pai, centralizadas; assessorias ficam ao lado do pai,
+    // alternando direita/esquerda (mesma convenção da tela principal) e
+    // empilhadas verticalmente quando há mais de uma do mesmo lado — cada
+    // uma com sua própria subárvore recalculada do mesmo jeito.
     function optimizeLayoutPositions() {
-      if (!layoutNodesFlat.length) return;
-      const MIN_ROW_GAP = 50;
-      const MIN_COL_GAP = 40;
+      if (!layoutNodesFlat.length || !orgTree) return;
 
-      const items = layoutNodesFlat.map(n => ({ id: n.id, type: n.type, parentId: n.parentId, pos: getLayoutPosition(n) }));
-      const itemById = {};
-      items.forEach(it => { itemById[it.id] = it; });
+      const GAP_X = 40;         // espaço horizontal entre subárvores irmãs
+      const GAP_Y = 70;         // espaço vertical entre pai e filhos (linha)
+      const STAFF_GAP = 40;     // espaço entre o pai e a assessoria ao lado
+      const STAFF_ROW_GAP = 16; // espaço entre assessorias empilhadas do mesmo lado
 
-      // 1) Agrupa em linhas: um item entra na última linha se seu intervalo
-      // vertical [topo, base] se sobrepõe ao dela.
-      const sortedByY = [...items].sort((a, b) => a.pos.y - b.pos.y);
-      const rows = [];
-      sortedByY.forEach(item => {
-        const top = item.pos.y, bottom = item.pos.y + item.pos.h;
-        const last = rows[rows.length - 1];
-        if (last && top < last.maxY && bottom > last.minY) {
-          last.items.push(item);
-          last.minY = Math.min(last.minY, top);
-          last.maxY = Math.max(last.maxY, bottom);
-        } else {
-          rows.push({ minY: top, maxY: bottom, items: [item] });
-        }
+      const byId = {};
+      layoutNodesFlat.forEach(n => { byId[n.id] = n; });
+      const childrenOf = {};
+      layoutNodesFlat.forEach(n => {
+        if (!n.parentId) return;
+        (childrenOf[n.parentId] = childrenOf[n.parentId] || []).push(n);
       });
 
-      // 2) Compacta o espaço vertical entre linhas (só encolhe, nunca aumenta).
-      let cursorBottom = null;
-      rows.forEach(row => {
-        if (cursorBottom === null) {
-          row.shiftY = 0;
-        } else {
-          const desiredMinY = cursorBottom + MIN_ROW_GAP;
-          row.shiftY = row.minY > desiredMinY ? (desiredMinY - row.minY) : 0;
-        }
-        cursorBottom = row.maxY + row.shiftY;
-      });
-      rows.forEach(row => {
-        row.items.forEach(item => { item.finalY = item.pos.y + row.shiftY; });
-      });
+      function layoutSubtree(nodeId) {
+        const node = byId[nodeId];
+        const children = childrenOf[nodeId] || [];
+        const lineChildren = children.filter(c => c.type !== 'assessoria');
+        const staffChildren = children.filter(c => c.type === 'assessoria');
 
-      // 3) Dentro de cada linha (processadas de cima para baixo, então o pai
-      // já tem posição final antes do filho ser processado): tenta colocar
-      // cada caixa alinhada horizontalmente com o pai, mas nunca antes do
-      // fim da caixa anterior na mesma linha + o vão mínimo — isso preserva
-      // a ordem e evita sobreposição, mesmo quando dois filhos "disputam" a
-      // mesma posição ideal.
-      const finalX = {};
-      rows.forEach(row => {
-        const sortedByX = [...row.items].sort((a, b) => a.pos.x - b.pos.x);
-        let cursor = null;
-        sortedByX.forEach(item => {
-          const parent = item.parentId ? itemById[item.parentId] : null;
-          let desiredX = item.pos.x; // padrão: mantém a posição já compactada
-          if (item.type !== 'assessoria' && parent && finalX[parent.id] !== undefined) {
-            const parentCenterX = finalX[parent.id] + parent.pos.w / 2;
-            desiredX = parentCenterX - item.pos.w / 2;
-          }
-          const minAllowedX = cursor === null ? -Infinity : cursor;
-          const newX = Math.max(desiredX, minAllowedX);
-          finalX[item.id] = newX;
-          cursor = newX + item.pos.w + MIN_COL_GAP;
+        const childLayouts = lineChildren.map(c => layoutSubtree(c.id));
+        const lineTotalWidth = childLayouts.reduce((s, cl, i) => s + cl.width + (i > 0 ? GAP_X : 0), 0);
+
+        // Assessorias alternam de lado na ordem original (1ª direita, 2ª
+        // esquerda...), cada uma com a própria subárvore.
+        const rightLayouts = [], leftLayouts = [];
+        staffChildren.forEach((sc, i) => {
+          const scLayout = layoutSubtree(sc.id);
+          (i % 2 === 0 ? rightLayouts : leftLayouts).push(scLayout);
         });
+        const rightWidth = rightLayouts.length ? Math.max(...rightLayouts.map(l => l.width)) : 0;
+        const leftWidth = leftLayouts.length ? Math.max(...leftLayouts.map(l => l.width)) : 0;
+        const rightHeight = rightLayouts.reduce((s, l, i) => s + l.height + (i > 0 ? STAFF_ROW_GAP : 0), 0);
+        const leftHeight = leftLayouts.reduce((s, l, i) => s + l.height + (i > 0 ? STAFF_ROW_GAP : 0), 0);
+
+        const coreWidth = Math.max(node.w, lineTotalWidth);
+        const leftExtra = leftLayouts.length ? leftWidth + STAFF_GAP : 0;
+        const rightExtra = rightLayouts.length ? rightWidth + STAFF_GAP : 0;
+        const totalWidth = leftExtra + coreWidth + rightExtra;
+
+        const positions = {};
+
+        // Caixa do próprio nó: centralizada no "núcleo" (ela + filhos-linha).
+        const nodeX = leftExtra + (coreWidth - node.w) / 2;
+        positions[node.id] = { x: nodeX, y: 0, w: node.w, h: node.h };
+
+        // Filhos do tipo linha: lado a lado, centralizados sob o núcleo.
+        const childrenStartX = leftExtra + (coreWidth - lineTotalWidth) / 2;
+        let cursorX = childrenStartX;
+        childLayouts.forEach(cl => {
+          Object.entries(cl.positions).forEach(([id, pos]) => {
+            positions[id] = { x: pos.x + cursorX, y: pos.y + node.h + GAP_Y, w: pos.w, h: pos.h };
+          });
+          cursorX += cl.width + GAP_X;
+        });
+
+        // Assessorias à direita, empilhadas e centralizadas na altura do pai.
+        let rightCursorY = (node.h - rightHeight) / 2;
+        rightLayouts.forEach(l => {
+          const baseX = leftExtra + coreWidth + STAFF_GAP;
+          Object.entries(l.positions).forEach(([id, pos]) => {
+            positions[id] = { x: pos.x + baseX, y: pos.y + rightCursorY, w: pos.w, h: pos.h };
+          });
+          rightCursorY += l.height + STAFF_ROW_GAP;
+        });
+
+        // Assessorias à esquerda, mesma lógica, espelhada.
+        let leftCursorY = (node.h - leftHeight) / 2;
+        leftLayouts.forEach(l => {
+          const baseX = leftExtra - STAFF_GAP - l.width;
+          Object.entries(l.positions).forEach(([id, pos]) => {
+            positions[id] = { x: pos.x + baseX, y: pos.y + leftCursorY, w: pos.w, h: pos.h };
+          });
+          leftCursorY += l.height + STAFF_ROW_GAP;
+        });
+
+        const lineBranchHeight = childLayouts.length
+          ? (node.h + GAP_Y + Math.max(...childLayouts.map(cl => cl.height)))
+          : node.h;
+        const totalHeight = Math.max(lineBranchHeight, rightCursorY, leftCursorY);
+
+        return { width: totalWidth, height: totalHeight, positions };
+      }
+
+      const rootLayout = layoutSubtree(orgTree.id);
+
+      // Ancora o novo layout no canto onde o organograma já estava, para não
+      // "pular" para um lugar totalmente diferente da tela.
+      let minX = Infinity, minY = Infinity;
+      layoutNodesFlat.forEach(n => {
+        const p = getLayoutPosition(n);
+        minX = Math.min(minX, p.x);
+        minY = Math.min(minY, p.y);
+      });
+      const anchorX = isFinite(minX) ? minX : 0;
+      const anchorY = isFinite(minY) ? minY : 0;
+
+      Object.entries(rootLayout.positions).forEach(([id, pos]) => {
+        layoutOverridesDraft[id] = { x: pos.x + anchorX, y: pos.y + anchorY };
       });
 
-      items.forEach(item => {
-        layoutOverridesDraft[item.id] = { x: finalX[item.id], y: item.finalY };
-      });
       updateLayoutPositionsOnly();
       commitLayoutChange();
-      showToast('Layout otimizado — espaços reduzidos e linhas mais curtas.', 'success');
+      showToast('Layout otimizado — área total reduzida.', 'success');
     }
 
     function updateLayoutUndoRedoButtons() {
