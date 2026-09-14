@@ -897,6 +897,9 @@
         <button id="layout-redo-btn" onclick="layoutRedo()" disabled class="bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed" title="Refazer">
           <i class="fa-solid fa-rotate-right"></i><span class="hidden sm:inline">Refazer</span>
         </button>
+        <button onclick="optimizeLayoutPositions()" class="bg-white border border-slate-300 hover:bg-emerald-50 hover:border-emerald-300 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Reduz espaços vazios excessivos, sem descartar o arranjo já feito">
+          <i class="fa-solid fa-compress text-emerald-600"></i><span class="hidden sm:inline">Otimizar</span>
+        </button>
         <button onclick="layoutResetPositions()" class="bg-white border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Restaurar as posições originais">
           <i class="fa-solid fa-arrow-rotate-left text-rose-500"></i><span class="hidden sm:inline">Resetar posições</span>
         </button>
@@ -3377,6 +3380,33 @@
     // um nunca mexe no outro.
     const LAYOUT_CONNECTOR_BEND_GAP = 24;
 
+    // Calcula o caminho SVG do conector entre pai e filho. Unidades do tipo
+    // assessoria são ligadas pela lateral (esquerda ou direita, conforme o
+    // lado em que estão em relação ao centro da caixa superior — recalculado
+    // a cada arraste); as demais mantêm o conector padrão de cima para baixo.
+    // Em ambos os casos, a "dobra" fica a uma distância fixa da caixa de
+    // cima, para que mover na horizontal só afete o trecho horizontal e
+    // mover na vertical só afete o trecho vertical.
+    function buildLayoutConnectorPath(p, c, childType, originX, originY) {
+      if (childType === 'assessoria') {
+        const parentCenterX = p.x - originX + p.w / 2;
+        const parentCenterY = p.y - originY + p.h / 2;
+        const childCenterX = c.x - originX + c.w / 2;
+        const childCenterY = c.y - originY + c.h / 2;
+        const side = childCenterX < parentCenterX ? 'left' : 'right';
+        const parentEdgeX = side === 'left' ? (p.x - originX) : (p.x - originX + p.w);
+        const childEdgeX = side === 'left' ? (c.x - originX + c.w) : (c.x - originX);
+        const bendX = side === 'left' ? parentEdgeX - LAYOUT_CONNECTOR_BEND_GAP : parentEdgeX + LAYOUT_CONNECTOR_BEND_GAP;
+        return `M ${parentEdgeX} ${parentCenterY} L ${bendX} ${parentCenterY} L ${bendX} ${childCenterY} L ${childEdgeX} ${childCenterY}`;
+      }
+      const x1 = p.x - originX + p.w / 2;
+      const y1 = p.y - originY + p.h;
+      const x2 = c.x - originX + c.w / 2;
+      const y2 = c.y - originY;
+      const bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
+      return `M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}`;
+    }
+
     function drawLayoutConnectors(originX, originY, width, height) {
       const svg = document.getElementById('layout-canvas-connectors');
       if (!svg) return;
@@ -3393,12 +3423,7 @@
         if (!parent) return;
         const p = getLayoutPosition(parent);
         const c = getLayoutPosition(n);
-        const x1 = p.x - originX + p.w / 2;
-        const y1 = p.y - originY + p.h;
-        const x2 = c.x - originX + c.w / 2;
-        const y2 = c.y - originY;
-        const bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
-        paths += `<path d="M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}"/>`;
+        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, originX, originY)}"/>`;
       });
       svg.innerHTML = paths;
     }
@@ -3504,6 +3529,69 @@
       showToast('Posições restauradas.', 'info');
     }
 
+    // "Otimizar": reduz espaços vazios excessivos SEM recalcular o layout do
+    // zero — agrupa as caixas em "linhas" pela sobreposição vertical atual e
+    // fecha os vãos maiores do que o mínimo confortável, tanto entre linhas
+    // (vertical) quanto entre caixas vizinhas dentro da mesma linha
+    // (horizontal). Nunca aumenta um vão nem muda a ordem/agrupamento que já
+    // existe — só aproxima o que estiver espaçado demais.
+    function optimizeLayoutPositions() {
+      if (!layoutNodesFlat.length) return;
+      const MIN_ROW_GAP = 50;
+      const MIN_COL_GAP = 40;
+
+      const items = layoutNodesFlat.map(n => ({ id: n.id, pos: getLayoutPosition(n) }));
+
+      // Agrupa em linhas: um item entra na última linha se seu intervalo
+      // vertical [topo, base] se sobrepõe ao dela.
+      const sortedByY = [...items].sort((a, b) => a.pos.y - b.pos.y);
+      const rows = [];
+      sortedByY.forEach(item => {
+        const top = item.pos.y, bottom = item.pos.y + item.pos.h;
+        const last = rows[rows.length - 1];
+        if (last && top < last.maxY && bottom > last.minY) {
+          last.items.push(item);
+          last.minY = Math.min(last.minY, top);
+          last.maxY = Math.max(last.maxY, bottom);
+        } else {
+          rows.push({ minY: top, maxY: bottom, items: [item] });
+        }
+      });
+
+      // Compacta o espaço vertical entre linhas (só encolhe, nunca aumenta).
+      let cursorBottom = null;
+      rows.forEach(row => {
+        if (cursorBottom === null) {
+          row.shiftY = 0;
+        } else {
+          const desiredMinY = cursorBottom + MIN_ROW_GAP;
+          row.shiftY = row.minY > desiredMinY ? (desiredMinY - row.minY) : 0;
+        }
+        cursorBottom = row.maxY + row.shiftY;
+      });
+
+      // Compacta o espaço horizontal dentro de cada linha (mesma regra).
+      const newPositions = {};
+      rows.forEach(row => {
+        const sortedByX = [...row.items].sort((a, b) => a.pos.x - b.pos.x);
+        let cursorRight = null;
+        sortedByX.forEach(item => {
+          let shiftX = 0;
+          if (cursorRight !== null) {
+            const desiredMinX = cursorRight + MIN_COL_GAP;
+            shiftX = item.pos.x > desiredMinX ? (desiredMinX - item.pos.x) : 0;
+          }
+          cursorRight = item.pos.x + item.pos.w + shiftX;
+          newPositions[item.id] = { x: item.pos.x + shiftX, y: item.pos.y + row.shiftY };
+        });
+      });
+
+      Object.keys(newPositions).forEach(id => { layoutOverridesDraft[id] = newPositions[id]; });
+      updateLayoutPositionsOnly();
+      commitLayoutChange();
+      showToast('Layout otimizado — espaços em branco reduzidos.', 'success');
+    }
+
     function updateLayoutUndoRedoButtons() {
       const undoBtn = document.getElementById('layout-undo-btn');
       const redoBtn = document.getElementById('layout-redo-btn');
@@ -3582,12 +3670,7 @@
         if (!parent) return;
         const p = getLayoutPosition(parent);
         const c = getLayoutPosition(n);
-        const x1 = p.x - originX + p.w / 2;
-        const y1 = p.y - originY + p.h;
-        const x2 = c.x - originX + c.w / 2;
-        const y2 = c.y - originY;
-        const bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
-        paths += `<path d="M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
+        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, originX, originY)}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
       });
       svg.innerHTML = paths;
       viewport.style.position = 'relative';
