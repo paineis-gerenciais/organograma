@@ -389,6 +389,7 @@
        A disposição é calculada em JS, comparando alternativas verticais, laterais
        e com quebra em linhas para reduzir área vazia sem sobrepor cartões/textos. */
     #optimized-print-page { display: none; }
+    #layout-print-page { display: none; }
     #optimized-print-header {
       display: flex;
       align-items: center;
@@ -750,6 +751,43 @@
       body.print-optimized #optimized-print-page .staff-row { margin-bottom: 14px !important; }
       body.print-optimized #optimized-print-page .staff-descendants { gap: 10px !important; margin-top: 14px !important; }
 
+      /* Ajustar Layout > Gerar PDF: imprime a versão com as posições
+         ajustadas manualmente, em página única e tamanho sob medida. */
+      body.print-layout #canvas-container { display: none !important; }
+      body.print-layout #layout-print-page {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      body.print-layout .optimized-print-sheet {
+        display: block !important;
+        position: relative !important;
+        width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+      }
+      body.print-layout .optimized-page-header {
+        padding: 1.5mm 0 1.3mm !important;
+        margin: 0 0 1.8mm !important;
+      }
+      body.print-layout .optimized-page-header img {
+        max-height: 30px !important;
+        max-width: 155px !important;
+      }
+      body.print-layout .optimized-page-header-center { margin: 0 8px !important; }
+      body.print-layout .optimized-page-title {
+        font-size: 12.5px !important;
+        line-height: 1.08 !important;
+      }
+      body.print-layout .optimized-page-subtitle {
+        font-size: 8px !important;
+        line-height: 1.08 !important;
+        margin-top: 1px !important;
+      }
+      body.print-layout .node-card { box-shadow: none !important; }
+
       /* Imprimir recorte: imprime somente a área selecionada na tela. */
       body.print-crop #canvas-container,
       body.print-crop #optimized-print-page,
@@ -861,6 +899,10 @@
         </button>
         <button onclick="layoutResetPositions()" class="bg-white border border-slate-300 hover:bg-rose-50 hover:border-rose-300 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Restaurar as posições originais">
           <i class="fa-solid fa-arrow-rotate-left text-rose-500"></i><span class="hidden sm:inline">Resetar posições</span>
+        </button>
+        <div class="h-6 w-px bg-slate-300 shrink-0"></div>
+        <button onclick="triggerLayoutPrint()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Gerar PDF com o layout ajustado">
+          <i class="fa-solid fa-file-pdf"></i><span>Gerar PDF</span>
         </button>
       </div>
     </header>
@@ -1312,6 +1354,7 @@
 
     <!-- ==================== PRINT OTIMIZADO: ORGANOGRAMA COMPACTADO ==================== -->
     <section id="optimized-print-page" class="hidden"></section>
+    <section id="layout-print-page" class="hidden"></section>
 
     <!-- ==================== PRINT: RECORTE SELECIONADO ==================== -->
     <section id="crop-print-page" class="hidden">
@@ -3327,6 +3370,13 @@
 
     // Linhas em ângulo reto (desce, atravessa, desce) — o mesmo padrão visual
     // usado na tela principal do organograma, em vez de uma curva.
+    // Distância fixa abaixo da caixa superior onde a linha "dobra" (o
+    // cotovelo). Fica ancorada na caixa de CIMA, não num ponto médio — assim,
+    // mover a caixa de baixo na vertical só estica/encolhe o trecho vertical
+    // que chega até ela, e mover na horizontal só afeta o trecho horizontal;
+    // um nunca mexe no outro.
+    const LAYOUT_CONNECTOR_BEND_GAP = 24;
+
     function drawLayoutConnectors(originX, originY, width, height) {
       const svg = document.getElementById('layout-canvas-connectors');
       if (!svg) return;
@@ -3347,8 +3397,8 @@
         const y1 = p.y - originY + p.h;
         const x2 = c.x - originX + c.w / 2;
         const y2 = c.y - originY;
-        const midY = (y1 + y2) / 2;
-        paths += `<path d="M ${x1} ${y1} L ${x1} ${midY} L ${x2} ${midY} L ${x2} ${y2}"/>`;
+        const bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
+        paths += `<path d="M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}"/>`;
       });
       svg.innerHTML = paths;
     }
@@ -3467,6 +3517,116 @@
       chartsData[currentChartId].updatedAt = Date.now();
       persistLocalCache();
       queueCloudSave(currentChartId);
+    }
+
+    // Gera um PDF com o layout ajustado (posições manuais), em página única
+    // sob medida — mesmo espírito do "Gerar PDF > Organograma" da tela
+    // principal: sem se prender a A4, em alta resolução para dar zoom.
+    function triggerLayoutPrint() {
+      if (!currentChartId || !layoutNodesFlat.length) { showToast('Nada para imprimir.', 'error'); return; }
+      const host = document.getElementById('layout-print-page');
+      if (!host) return;
+      host.innerHTML = '';
+
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      layoutNodesFlat.forEach(n => {
+        const p = getLayoutPosition(n);
+        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+        maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
+      });
+      const pad = 24;
+      const originX = minX - pad;
+      const originY = minY - pad;
+      const width = maxX - originX + pad;
+      const height = maxY - originY + pad;
+
+      const chart = chartsData[currentChartId];
+      const standardHeader = document.getElementById('print-header');
+      const sourceLogos = standardHeader ? standardHeader.querySelectorAll('img') : [];
+
+      const sheet = document.createElement('section');
+      sheet.className = 'optimized-print-sheet';
+
+      const header = document.createElement('div');
+      header.className = 'optimized-page-header';
+      header.innerHTML = `
+        <img alt="Logo Esquerda" src="${sourceLogos[0]?.src || ''}">
+        <div class="optimized-page-header-center">
+          <div class="optimized-page-title">${escapeHtml(chart?.name || 'Organograma')}</div>
+          <div class="optimized-page-subtitle">${escapeHtml(chart?.subtitle || '')}${chart?.subtitle ? ' · ' : ''}Layout ajustado</div>
+        </div>
+        <img alt="Logo Direita" src="${sourceLogos[1]?.src || ''}">
+      `;
+      sheet.appendChild(header);
+
+      const viewport = document.createElement('div');
+      viewport.className = 'optimized-page-viewport';
+      viewport.style.width = `${Math.ceil(width)}px`;
+      viewport.style.height = `${Math.ceil(height)}px`;
+
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'optimized-page-connectors');
+      svg.style.position = 'absolute';
+      svg.style.top = '0';
+      svg.style.left = '0';
+      svg.style.pointerEvents = 'none';
+      svg.setAttribute('width', width);
+      svg.setAttribute('height', height);
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+
+      const byId = {};
+      layoutNodesFlat.forEach(n => { byId[n.id] = n; });
+      let paths = '';
+      layoutNodesFlat.forEach(n => {
+        const parent = n.parentId ? byId[n.parentId] : null;
+        if (!parent) return;
+        const p = getLayoutPosition(parent);
+        const c = getLayoutPosition(n);
+        const x1 = p.x - originX + p.w / 2;
+        const y1 = p.y - originY + p.h;
+        const x2 = c.x - originX + c.w / 2;
+        const y2 = c.y - originY;
+        const bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
+        paths += `<path d="M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
+      });
+      svg.innerHTML = paths;
+      viewport.style.position = 'relative';
+      viewport.appendChild(svg);
+
+      layoutNodesFlat.forEach(n => {
+        const pos = getLayoutPosition(n);
+        const el = document.createElement('div');
+        const typeClasses = n.type === 'assessoria'
+          ? 'border-l-[5px] border-purple-500 rounded-lg'
+          : 'border-t-[5px] border-blue-600 rounded-xl';
+        el.className = `node-card ${typeClasses} border-x border-b border-slate-200 bg-white flex flex-col items-center justify-center text-center px-2 py-1.5`;
+        el.style.position = 'absolute';
+        el.style.left = `${pos.x - originX}px`;
+        el.style.top = `${pos.y - originY}px`;
+        el.style.width = `${pos.w}px`;
+        el.style.height = `${pos.h}px`;
+        el.innerHTML = `
+          <div class="unit-name font-bold text-slate-800 text-xs">${escapeHtml(n.name)}</div>
+          ${n.sigla ? `<div class="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">${escapeHtml(n.sigla)}</div>` : ''}
+        `;
+        viewport.appendChild(el);
+      });
+
+      sheet.appendChild(viewport);
+      host.appendChild(sheet);
+
+      document.body.classList.add('print-layout');
+      const wMm = width / PX_PER_MM + PAGE_MARGIN_MM * 2;
+      const hMm = height / PX_PER_MM + PAGE_MARGIN_MM * 2 + 22;
+      applyExactPageSize(Math.max(40, wMm), Math.max(40, hMm));
+
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          window.print();
+          document.body.classList.remove('print-layout');
+          clearOptimizedPageSize();
+        });
+      });
     }
 
     /* --- APPLICATION RENDERER --- */
