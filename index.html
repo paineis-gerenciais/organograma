@@ -172,6 +172,7 @@
       position: relative;
       padding-left: 26px !important;
       padding-top: 6px;
+      margin-left: 18px; /* leve deslocamento à direita em relação à caixa superior vinculada */
       gap: 16px;
       border-left: 2px solid #cbd5e1;
     }
@@ -184,6 +185,11 @@
     .org-tree ul.vertical-layer > li::before,
     .org-tree ul.vertical-layer > li::after { display: none; }
     .org-tree ul.vertical-layer > li > .node-wrapper { padding-top: 0 !important; }
+    /* Caixas da última camada em coluna ficam um pouco mais estreitas do que
+       o padrão (w-52 = 208px), já que têm menos texto ao lado para caber. */
+    .org-tree ul.vertical-layer > li > .node-wrapper > .node-card {
+      width: 184px;
+    }
     .org-tree ul.vertical-layer > li > .node-wrapper::before {
       content: '';
       position: absolute;
@@ -3350,6 +3356,20 @@
     // O arraste é travado no eixo (horizontal OU vertical) definido pelo
     // primeiro movimento perceptível — evita posicionamentos diagonais e
     // mantém as caixas alinhadas em linha/coluna, como pede um organograma.
+    // Ids de todas as subordinadas (recursivo) de um nó, usando a árvore de
+    // dados de verdade — usado para mover a subárvore inteira junto ao
+    // arrastar a caixa da hierarquia superior.
+    function getSubtreeIds(nodeId) {
+      const result = [];
+      function walkSubtree(id) {
+        const node = findNodeById(orgTree, id);
+        if (!node) return;
+        (node.children || []).forEach(c => { result.push(c.id); walkSubtree(c.id); });
+      }
+      walkSubtree(nodeId);
+      return result;
+    }
+
     function startLayoutDrag(e, nodeId) {
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
@@ -3357,7 +3377,17 @@
       const node = layoutNodesFlat.find(n => n.id === nodeId);
       const el = document.getElementById(`layout-card-${nodeId}`);
       if (!node || !el) return;
-      const startPos = getLayoutPosition(node);
+
+      // Move a caixa arrastada e todas as suas subordinadas juntas, mantendo
+      // a posição relativa entre elas. Só a linha até a hierarquia superior
+      // muda de forma; as linhas dentro da própria subárvore só se deslocam.
+      const subtreeIds = getSubtreeIds(nodeId);
+      const startPositions = {};
+      [nodeId, ...subtreeIds].forEach(id => {
+        const n = layoutNodesFlat.find(x => x.id === id);
+        if (n) startPositions[id] = getLayoutPosition(n);
+      });
+
       const startMouseX = e.clientX;
       const startMouseY = e.clientY;
       let axis = null;
@@ -3371,10 +3401,12 @@
           if (Math.abs(dx) < 4 && Math.abs(dy) < 4) return;
           axis = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
         }
-        layoutOverridesDraft[nodeId] = {
-          x: axis === 'x' ? startPos.x + dx : startPos.x,
-          y: axis === 'y' ? startPos.y + dy : startPos.y
-        };
+        const ddx = axis === 'x' ? dx : 0;
+        const ddy = axis === 'y' ? dy : 0;
+        Object.keys(startPositions).forEach(id => {
+          const sp = startPositions[id];
+          layoutOverridesDraft[id] = { x: sp.x + ddx, y: sp.y + ddy };
+        });
         updateLayoutPositionsOnly();
       }
       function onUp() {
