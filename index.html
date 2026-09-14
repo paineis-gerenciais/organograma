@@ -3387,12 +3387,32 @@
     // Em ambos os casos, a "dobra" fica a uma distância fixa da caixa de
     // cima, para que mover na horizontal só afete o trecho horizontal e
     // mover na vertical só afete o trecho vertical.
-    function buildLayoutConnectorPath(p, c, childType, originX, originY) {
+    // Calcula o caminho SVG do conector entre pai e filho.
+    // - Assessoria com pai do tipo "linha" (caixa padrão): a linha sai por
+    //   baixo do pai (como o conector padrão), desce um pouco e só depois
+    //   vira para entrar na lateral da assessoria — igual à tela principal.
+    // - Assessoria com pai também assessoria: continua ligada lateral a
+    //   lateral (os dois são do mesmo "galho").
+    // - Demais casos: conector padrão de cima para baixo.
+    // Em todos os casos, a "dobra" fica a uma distância fixa da caixa de
+    // cima, para que mover na horizontal só afete o trecho horizontal e
+    // mover na vertical só afete o trecho vertical.
+    function buildLayoutConnectorPath(p, c, childType, parentType, originX, originY) {
       if (childType === 'assessoria') {
-        const parentCenterX = p.x - originX + p.w / 2;
-        const parentCenterY = p.y - originY + p.h / 2;
         const childCenterX = c.x - originX + c.w / 2;
         const childCenterY = c.y - originY + c.h / 2;
+
+        if (parentType !== 'assessoria') {
+          const parentCenterX = p.x - originX + p.w / 2;
+          const parentBottomY = p.y - originY + p.h;
+          const side = childCenterX < parentCenterX ? 'left' : 'right';
+          const childEdgeX = side === 'left' ? (c.x - originX + c.w) : (c.x - originX);
+          const bendY = parentBottomY + LAYOUT_CONNECTOR_BEND_GAP;
+          return `M ${parentCenterX} ${parentBottomY} L ${parentCenterX} ${bendY} L ${childEdgeX} ${bendY} L ${childEdgeX} ${childCenterY}`;
+        }
+
+        const parentCenterX = p.x - originX + p.w / 2;
+        const parentCenterY = p.y - originY + p.h / 2;
         const side = childCenterX < parentCenterX ? 'left' : 'right';
         const parentEdgeX = side === 'left' ? (p.x - originX) : (p.x - originX + p.w);
         const childEdgeX = side === 'left' ? (c.x - originX + c.w) : (c.x - originX);
@@ -3423,7 +3443,7 @@
         if (!parent) return;
         const p = getLayoutPosition(parent);
         const c = getLayoutPosition(n);
-        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, originX, originY)}"/>`;
+        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY)}"/>`;
       });
       svg.innerHTML = paths;
     }
@@ -3535,14 +3555,24 @@
     // (vertical) quanto entre caixas vizinhas dentro da mesma linha
     // (horizontal). Nunca aumenta um vão nem muda a ordem/agrupamento que já
     // existe — só aproxima o que estiver espaçado demais.
+    // "Otimizar": reduz espaços vazios excessivos SEM recalcular o layout do
+    // zero — agrupa as caixas em "linhas" pela sobreposição vertical atual,
+    // fecha os vãos maiores do que o mínimo confortável (vertical entre
+    // linhas, horizontal entre vizinhas na mesma linha) e, como critério
+    // adicional, aproxima cada caixa (exceto assessorias, que ficam
+    // deliberadamente ao lado do pai) da posição horizontal do seu pai —
+    // encurtando a linha de conexão — sem nunca sobrepor as vizinhas nem
+    // mudar a ordem esquerda-direita já compactada.
     function optimizeLayoutPositions() {
       if (!layoutNodesFlat.length) return;
       const MIN_ROW_GAP = 50;
       const MIN_COL_GAP = 40;
 
-      const items = layoutNodesFlat.map(n => ({ id: n.id, pos: getLayoutPosition(n) }));
+      const items = layoutNodesFlat.map(n => ({ id: n.id, type: n.type, parentId: n.parentId, pos: getLayoutPosition(n) }));
+      const itemById = {};
+      items.forEach(it => { itemById[it.id] = it; });
 
-      // Agrupa em linhas: um item entra na última linha se seu intervalo
+      // 1) Agrupa em linhas: um item entra na última linha se seu intervalo
       // vertical [topo, base] se sobrepõe ao dela.
       const sortedByY = [...items].sort((a, b) => a.pos.y - b.pos.y);
       const rows = [];
@@ -3558,7 +3588,7 @@
         }
       });
 
-      // Compacta o espaço vertical entre linhas (só encolhe, nunca aumenta).
+      // 2) Compacta o espaço vertical entre linhas (só encolhe, nunca aumenta).
       let cursorBottom = null;
       rows.forEach(row => {
         if (cursorBottom === null) {
@@ -3569,27 +3599,40 @@
         }
         cursorBottom = row.maxY + row.shiftY;
       });
+      rows.forEach(row => {
+        row.items.forEach(item => { item.finalY = item.pos.y + row.shiftY; });
+      });
 
-      // Compacta o espaço horizontal dentro de cada linha (mesma regra).
-      const newPositions = {};
+      // 3) Dentro de cada linha (processadas de cima para baixo, então o pai
+      // já tem posição final antes do filho ser processado): tenta colocar
+      // cada caixa alinhada horizontalmente com o pai, mas nunca antes do
+      // fim da caixa anterior na mesma linha + o vão mínimo — isso preserva
+      // a ordem e evita sobreposição, mesmo quando dois filhos "disputam" a
+      // mesma posição ideal.
+      const finalX = {};
       rows.forEach(row => {
         const sortedByX = [...row.items].sort((a, b) => a.pos.x - b.pos.x);
-        let cursorRight = null;
+        let cursor = null;
         sortedByX.forEach(item => {
-          let shiftX = 0;
-          if (cursorRight !== null) {
-            const desiredMinX = cursorRight + MIN_COL_GAP;
-            shiftX = item.pos.x > desiredMinX ? (desiredMinX - item.pos.x) : 0;
+          const parent = item.parentId ? itemById[item.parentId] : null;
+          let desiredX = item.pos.x; // padrão: mantém a posição já compactada
+          if (item.type !== 'assessoria' && parent && finalX[parent.id] !== undefined) {
+            const parentCenterX = finalX[parent.id] + parent.pos.w / 2;
+            desiredX = parentCenterX - item.pos.w / 2;
           }
-          cursorRight = item.pos.x + item.pos.w + shiftX;
-          newPositions[item.id] = { x: item.pos.x + shiftX, y: item.pos.y + row.shiftY };
+          const minAllowedX = cursor === null ? -Infinity : cursor;
+          const newX = Math.max(desiredX, minAllowedX);
+          finalX[item.id] = newX;
+          cursor = newX + item.pos.w + MIN_COL_GAP;
         });
       });
 
-      Object.keys(newPositions).forEach(id => { layoutOverridesDraft[id] = newPositions[id]; });
+      items.forEach(item => {
+        layoutOverridesDraft[item.id] = { x: finalX[item.id], y: item.finalY };
+      });
       updateLayoutPositionsOnly();
       commitLayoutChange();
-      showToast('Layout otimizado — espaços em branco reduzidos.', 'success');
+      showToast('Layout otimizado — espaços reduzidos e linhas mais curtas.', 'success');
     }
 
     function updateLayoutUndoRedoButtons() {
@@ -3670,7 +3713,7 @@
         if (!parent) return;
         const p = getLayoutPosition(parent);
         const c = getLayoutPosition(n);
-        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, originX, originY)}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
+        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY)}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
       });
       svg.innerHTML = paths;
       viewport.style.position = 'relative';
