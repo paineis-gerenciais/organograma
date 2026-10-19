@@ -141,6 +141,12 @@
       word-break: normal;
     }
 
+    /* Resultado da busca em foco (o que está centralizado agora). */
+    .node-card.search-current {
+      --tw-ring-color: #f97316 !important;
+      background-color: #ffedd5 !important;
+    }
+
     /* Tela "Ajustar Layout": cartões soltos, posicionados livremente e
        arrastáveis, sem a estrutura de árvore (<ul>/<li>) da tela principal. */
     #layout-canvas .layout-node-card {
@@ -161,20 +167,34 @@
       stroke-width: 2;
     }
 
-    /* Última camada em modo vertical: em vez da fileira horizontal padrão,
-       empilha os cartões em coluna, ligados por uma "espinha" vertical com um
-       traço curto até cada cartão — visual parecido com as unidades de
-       assessoria, mas simples o bastante para qualquer quantidade de itens. */
+    /* Última camada em modo vertical.
+       - A espinha das unidades de linha sai do canto inferior esquerdo do pai
+         (14px para dentro da borda) e desce por trás das assessorias, que
+         nesse modo ficam todas à direita da linha central.
+       - Cada item desenha o próprio trecho da espinha; o último termina no
+         centro do cartão, sem linha sobrando abaixo dele. */
+    .node-wrapper.vl-parent { min-width: 244px; }
+    .node-wrapper.vl-parent::after {
+      content: '';
+      position: absolute;
+      left: calc(50% - 90px);
+      top: 20px;
+      bottom: 0;
+      width: 2px;
+      background: #cbd5e1;
+      z-index: 0;
+    }
+    .org-tree li:only-child > .node-wrapper.vl-parent::after { top: 0; }
     .org-tree ul.vertical-layer {
       display: flex;
       flex-direction: column;
       align-items: flex-start;
       position: relative;
+      width: max-content;
+      margin-left: calc(50% - 90px);
       padding-left: 26px !important;
-      padding-top: 6px;
-      margin-left: 18px; /* leve deslocamento à direita em relação à caixa superior vinculada */
+      padding-top: 14px;
       gap: 16px;
-      border-left: 2px solid #cbd5e1;
     }
     .org-tree ul.vertical-layer::before,
     .org-tree ul.vertical-layer::after { display: none; }
@@ -182,11 +202,27 @@
       padding: 0 !important;
       text-align: left;
     }
-    .org-tree ul.vertical-layer > li::before,
     .org-tree ul.vertical-layer > li::after { display: none; }
+    .org-tree ul.vertical-layer > li::before {
+      display: block;
+      content: '';
+      position: absolute;
+      left: -26px;
+      right: auto;
+      top: -16px;
+      bottom: 0;
+      width: 2px;
+      height: auto;
+      border: 0 !important;
+      border-radius: 0 !important;
+      background: #cbd5e1;
+      z-index: 0;
+    }
+    .org-tree ul.vertical-layer > li:first-child::before { top: -14px; }
+    .org-tree ul.vertical-layer > li:last-child::before { bottom: 50%; }
     .org-tree ul.vertical-layer > li > .node-wrapper { padding-top: 0 !important; }
     /* Caixas da última camada em coluna ficam um pouco mais estreitas do que
-       o padrão (w-52 = 208px), já que têm menos texto ao lado para caber. */
+       o padrão (w-52 = 208px). */
     .org-tree ul.vertical-layer > li > .node-wrapper > .node-card {
       width: 184px;
     }
@@ -200,14 +236,37 @@
       background: #cbd5e1;
       transform: translateY(-1px);
     }
+    /* Assessorias do pai em modo vertical: todas à direita, com a linha
+       central terminando na última delas (sem sobra). */
+    .staff-zone.all-right::before { display: none; }
+    .staff-zone.all-right .staff-row::before {
+      display: block;
+      content: '';
+      position: absolute;
+      left: 50%;
+      top: -14px;
+      bottom: 0;
+      width: 2px;
+      background: #cbd5e1;
+      transform: translateX(-1px);
+      z-index: 0;
+    }
+    .staff-zone.all-right .staff-row:first-child::before { top: -15px; }
+    .staff-zone.all-right .staff-row:last-child { margin-bottom: 0; }
+    .staff-zone.all-right .staff-row:last-child::before { bottom: auto; height: calc(14px + 27px); }
+    .staff-zone.all-right .staff-row:first-child:last-child::before { height: calc(15px + 27px); }
 
     /* Assessorias: formato lateral original, mantendo toda a descendência no mesmo lado. */
     #tree-viewport { transform-origin: 0 0; }
+    /* A zona de assessoria ocupa só a largura das caixas reais: as duas
+       colunas laterais têm o tamanho da maior caixa de qualquer lado (mantém
+       a linha central no meio), em vez de 260px fixos de cada lado. As
+       fileiras usam subgrid para compartilhar essas colunas. */
     .staff-zone {
       position: relative;
-      display: inline-block;
-      width: 560px;
-      min-width: 560px;
+      display: inline-grid;
+      grid-template-columns: minmax(0, 1fr) 40px minmax(0, 1fr);
+      width: max-content;
       margin-top: 15px;
       padding: 0;
       background: transparent;
@@ -229,8 +288,9 @@
     .staff-row {
       position: relative;
       display: grid;
-      grid-template-columns: 260px 40px 260px;
-      width: 560px;
+      grid-column: 1 / -1;
+      grid-template-columns: 260px 40px 260px; /* navegadores sem subgrid */
+      grid-template-columns: subgrid;
       align-items: start;
       margin-bottom: 14px;
       overflow: visible;
@@ -833,17 +893,21 @@
     .compare-viewport { position: absolute; top: 0; left: 0; transform-origin: 0 0; will-change: transform; }
     .compare-tree { display: inline-block; padding: 48px 50px 90px; white-space: nowrap; transform-origin: 0 0; }
     .compare-tree ul { position: relative; display: flex; justify-content: center; margin: 0; padding-left: 0; }
-    .compare-tree li { text-align: center; list-style-type: none; position: relative; padding: 20px 8px 0; }
+    /* Linhas de conexão da comparação: mais grossas e escuras que antes
+       (1,5px cinza-claro) para não sumirem sobre o fundo pontilhado, com
+       um degrau vertical um pouco maior entre os níveis. */
+    .compare-tree { --cmp-line: #64748b; --cmp-line-w: 2px; --cmp-gap: 24px; }
+    .compare-tree li { text-align: center; list-style-type: none; position: relative; padding: var(--cmp-gap) 8px 0; }
     .compare-tree li::before, .compare-tree li::after {
-      content: ''; position: absolute; top: 0; right: 50%; border-top: 1.5px solid #cbd5e1; width: 50%; height: 20px; z-index: 0;
+      content: ''; position: absolute; top: 0; right: 50%; border-top: var(--cmp-line-w) solid var(--cmp-line); width: 50%; height: var(--cmp-gap); z-index: 0;
     }
-    .compare-tree li::after { right: auto; left: 50%; border-left: 1.5px solid #cbd5e1; }
+    .compare-tree li::after { right: auto; left: 50%; border-left: var(--cmp-line-w) solid var(--cmp-line); }
     .compare-tree li:only-child::after, .compare-tree li:only-child::before { display: none; }
     .compare-tree li:only-child { padding-top: 0; }
     .compare-tree li:first-child::before, .compare-tree li:last-child::after { border: 0 none; }
-    .compare-tree li:last-child::before { border-right: 1.5px solid #cbd5e1; border-radius: 0 6px 0 0; }
+    .compare-tree li:last-child::before { border-right: var(--cmp-line-w) solid var(--cmp-line); border-radius: 0 6px 0 0; }
     .compare-tree li:first-child::after { border-radius: 6px 0 0 0; }
-    .compare-tree li ul::before { content: ''; position: absolute; top: -20px; left: 50%; border-left: 1.5px solid #cbd5e1; width: 0; height: 20px; }
+    .compare-tree li ul::before { content: ''; position: absolute; top: calc(-1 * var(--cmp-gap)); left: 50%; border-left: var(--cmp-line-w) solid var(--cmp-line); width: 0; height: var(--cmp-gap); }
     .compare-node-card {
       position: relative; z-index: 2; width: 164px; min-height: 50px; white-space: normal; word-break: break-word;
       background: white; border: 1px solid #cbd5e1; border-top: 4px solid #2563eb; border-radius: 9px;
@@ -920,6 +984,7 @@
             <button id="layout-layer-counter" type="button" onclick="toggleAllLayersInLayoutView()" class="min-w-7 px-1 h-6 rounded text-[9px] font-bold text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 transition-colors cursor-pointer" title="Clique para expandir tudo ou recolher tudo">Todos</button>
             <button onclick="changeLayerInLayoutView(-1)" class="w-7 h-7 rounded hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors" title="Recolher: ocultar um nível"><i class="fa-solid fa-minus text-[10px]"></i></button>
           </div>
+          <button id="layout-last-layer-btn" onclick="toggleLastLayerOrientation()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Última camada: horizontal (clique para deixar vertical)"><i class="fa-solid fa-grip-lines text-xs"></i></button>
           <hr class="border-slate-200 mx-1">
           <button onclick="layoutZoomIn()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Aumentar Zoom"><i class="fa-solid fa-magnifying-glass-plus text-xs"></i></button>
           <button onclick="layoutZoomOut()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Diminuir Zoom"><i class="fa-solid fa-magnifying-glass-minus text-xs"></i></button>
@@ -1089,6 +1154,17 @@
           </div>
         </div>
         <div id="compare-differences-list" class="compare-scrollbar flex-1 overflow-y-auto p-3 space-y-2"></div>
+        <div class="p-3 bg-white border-t border-slate-200 shrink-0">
+          <label for="compare-general-comment" class="flex items-center justify-between text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+            <span><i class="fa-regular fa-comment-dots mr-1 text-violet-600"></i>Comentário geral</span>
+            <span class="normal-case tracking-normal font-normal text-slate-400">vai para o relatório da consolidação</span>
+          </label>
+          <textarea id="compare-general-comment" rows="3" oninput="if (comparisonState) { comparisonState.comment = this.value; queueComparisonProgressSave(); }" placeholder="Observações gerais sobre esta comparação, justificativas, pendências..." class="w-full text-xs px-3 py-2 border border-slate-300 rounded-lg resize-y focus:outline-none focus:ring-2 focus:ring-violet-500"></textarea>
+          <div class="mt-1.5 flex items-center justify-between gap-2">
+            <span id="compare-progress-status" class="text-[10px] text-slate-400"><i class="fa-solid fa-cloud mr-1"></i>O andamento é salvo automaticamente.</span>
+            <button type="button" onclick="discardComparisonProgress()" class="text-[10px] font-bold text-slate-500 hover:text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-md" title="Apagar decisões, ajustes e comentário salvos desta comparação"><i class="fa-solid fa-rotate-left mr-1"></i>Recomeçar</button>
+          </div>
+        </div>
       </aside>
     </div>
   </div>
@@ -1254,7 +1330,8 @@
       <div class="flex items-center gap-3 flex-wrap">
         <div class="relative">
           <i class="fa-solid fa-magnifying-glass absolute left-3 top-2.5 text-slate-400 text-xs"></i>
-          <input type="text" id="search-input" oninput="handleSearch(this.value)" placeholder="Buscar unidade..." class="pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-48 transition-all h-[34px]">
+          <input type="text" id="search-input" oninput="handleSearch(this.value)" onkeydown="handleSearchKeydown(event)" placeholder="Buscar unidade..." title="Enter: próximo resultado · Shift+Enter: anterior" class="pl-8 pr-16 py-1.5 text-xs bg-slate-50 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white w-56 transition-all h-[34px]">
+          <span id="search-counter" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-bold text-slate-400 pointer-events-none"></span>
         </div>
         <div class="h-6 w-px bg-slate-300 hidden sm:block"></div>
         <button onclick="openAddModal()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-3.5 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors">
@@ -1470,7 +1547,8 @@
         </div>
         <div>
           <label class="block text-xs font-bold text-slate-700 mb-1">Vinculação Hierárquica <span class="text-rose-500">*</span></label>
-          <select id="modal-parent-id" required class="w-full text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"></select>
+          <select id="modal-parent-id" required onchange="updateAddModalParentHint()" class="w-full text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"></select>
+          <p id="modal-parent-hint" class="hidden mt-1.5 text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2 py-1.5"><i class="fa-solid fa-circle-info mr-1"></i>A nova unidade passa a ser o topo do organograma e o topo atual fica subordinado a ela.</p>
         </div>
         <div class="grid grid-cols-2 gap-4">
           <div>
@@ -1492,6 +1570,27 @@
           </button>
         </div>
       </form>
+    </div>
+  </div>
+
+  <!-- MODAL: REMOVER UNIDADE SUPERIOR (TOPO) -->
+  <div id="remove-root-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 no-print">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-trash text-rose-500"></i><h3 class="font-bold text-slate-800 text-base">Remover unidade superior</h3>
+        </div>
+        <button onclick="closeRemoveRootModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div class="p-6 space-y-4">
+        <p class="text-sm text-slate-600">Você vai remover <strong id="remove-root-name"></strong>, que é o topo do organograma. Escolha qual unidade subordinada passa a ser o novo topo:</p>
+        <select id="remove-root-new-top" class="w-full text-sm px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"></select>
+        <p id="remove-root-others" class="text-[11px] text-slate-500"></p>
+        <div class="pt-2 flex items-center justify-end gap-3">
+          <button type="button" onclick="closeRemoveRootModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+          <button type="button" onclick="confirmRemoveRoot()" class="bg-rose-600 hover:bg-rose-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-check"></i><span>Remover e promover</span></button>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1590,6 +1689,138 @@
       if (!db || !id) return;
       clearTimeout(_folderCloudTimers[id]);
       _folderCloudTimers[id] = setTimeout(() => saveFolderToCloud(id), 700);
+    }
+
+    /* --- ANDAMENTO DAS COMPARAÇÕES ---
+       Cada par (1º organograma × 2º organograma, nessa ordem) tem um
+       documento na coleção "orgComparisons" com as decisões (aprovar,
+       rejeitar, ajustar), os ajustes feitos e o comentário geral. Assim é
+       possível sair da tela de comparação e continuar depois, inclusive em
+       outro computador. As decisões são guardadas por uma chave estável
+       (tipo + ids das unidades), e não pela posição na lista, para continuar
+       valendo mesmo que os organogramas tenham sido editados depois. */
+    let comparisonsData = JSON.parse(localStorage.getItem('orgComparisonsData') || '{}');
+    function persistComparisonsCache() {
+      try { localStorage.setItem('orgComparisonsData', JSON.stringify(comparisonsData)); } catch (e) { console.error(e); }
+    }
+    function comparisonProgressId(firstId, secondId) { return `${firstId}__${secondId}`; }
+    function comparisonDiffKey(diff) { return `${diff.type}|${diff.baseMeta?.id || ''}|${diff.targetMeta?.id || ''}`; }
+
+    async function saveComparisonToCloud(id) {
+      if (!db || !id || !comparisonsData[id]) return;
+      try {
+        await db.collection('orgComparisons').doc(id).set(comparisonsData[id]);
+      } catch (e) {
+        console.error('Falha ao sincronizar a comparação com a nuvem:', e);
+        setComparisonProgressStatus('Salvo neste navegador; falha ao sincronizar com a nuvem.', true);
+      }
+    }
+    async function deleteComparisonFromCloud(id) {
+      if (!db || !id) return;
+      try { await db.collection('orgComparisons').doc(id).delete(); } catch (e) { console.error(e); }
+    }
+
+    function setComparisonProgressStatus(text, isError = false) {
+      const el = document.getElementById('compare-progress-status');
+      if (!el) return;
+      el.className = `text-[10px] ${isError ? 'text-rose-600' : 'text-slate-400'}`;
+      el.innerHTML = `<i class="fa-solid ${isError ? 'fa-triangle-exclamation' : 'fa-cloud'} mr-1"></i>${escapeHtml(text)}`;
+    }
+
+    // Monta o registro do andamento a partir do estado atual da comparação.
+    function snapshotComparisonProgress() {
+      if (!comparisonState) return null;
+      const decisions = {};
+      comparisonState.model.diffs.forEach(d => {
+        if (d.status === 'pending' && !d.adjusted) return;
+        decisions[comparisonDiffKey(d)] = { status: d.status, resolutionMode: d.resolutionMode || 'standard', adjusted: d.adjusted || null };
+      });
+      return {
+        id: comparisonProgressId(comparisonState.firstId, comparisonState.secondId),
+        firstId: comparisonState.firstId,
+        secondId: comparisonState.secondId,
+        comment: comparisonState.comment || '',
+        decisions,
+        updatedAt: Date.now()
+      };
+    }
+
+    let _comparisonSaveTimer = null;
+    function queueComparisonProgressSave() {
+      if (!comparisonState) return;
+      const record = snapshotComparisonProgress();
+      if (!record) return;
+      comparisonsData[record.id] = record;
+      persistComparisonsCache();
+      const time = new Date(record.updatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+      setComparisonProgressStatus(`Andamento salvo às ${time}.`);
+      clearTimeout(_comparisonSaveTimer);
+      _comparisonSaveTimer = setTimeout(() => saveComparisonToCloud(record.id), 700);
+    }
+
+    // Aplica um andamento salvo ao modelo recém-calculado. Decisões de
+    // diferenças que não existem mais (organogramas editados) são ignoradas.
+    function applyComparisonProgress(record) {
+      if (!comparisonState || !record) return { applied: 0, ignored: 0 };
+      const byKey = new Map(comparisonState.model.diffs.map(d => [comparisonDiffKey(d), d]));
+      let applied = 0, ignored = 0;
+      Object.entries(record.decisions || {}).forEach(([key, dec]) => {
+        const diff = byKey.get(key);
+        if (!diff) { ignored++; return; }
+        diff.status = dec.status || 'pending';
+        diff.resolutionMode = dec.resolutionMode || 'standard';
+        diff.adjusted = dec.adjusted || null;
+        applied++;
+      });
+      comparisonState.comment = record.comment || '';
+      const ta = document.getElementById('compare-general-comment');
+      if (ta) ta.value = comparisonState.comment;
+      return { applied, ignored };
+    }
+
+    function announceRestoredProgress(record, result) {
+      if (!result.applied && !(record.comment || '').trim()) return;
+      const when = record.updatedAt ? new Date(record.updatedAt).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' }) : '';
+      setComparisonProgressStatus(`Andamento retomado${when ? ' (salvo em ' + when + ')' : ''}.`);
+      showToast(`Andamento retomado: ${result.applied} decisão(ões)${result.ignored ? `, ${result.ignored} ignorada(s) porque os organogramas mudaram` : ''}.`, 'info');
+    }
+
+    // Busca na nuvem uma versão mais recente do andamento (ex: salva em outro
+    // computador) e, se houver, aplica por cima da versão local.
+    async function syncComparisonProgressFromCloud(firstId, secondId) {
+      if (!db) return;
+      const id = comparisonProgressId(firstId, secondId);
+      try {
+        const doc = await db.collection('orgComparisons').doc(id).get();
+        if (!doc.exists) return;
+        const cloud = doc.data();
+        const local = comparisonsData[id];
+        if (local && (local.updatedAt || 0) >= (cloud.updatedAt || 0)) return;
+        if (!comparisonState || comparisonState.firstId !== firstId || comparisonState.secondId !== secondId) return;
+        comparisonsData[id] = cloud;
+        persistComparisonsCache();
+        const result = applyComparisonProgress(cloud);
+        renderComparison();
+        announceRestoredProgress(cloud, result);
+      } catch (e) {
+        console.error('Falha ao carregar o andamento da comparação:', e);
+      }
+    }
+
+    function discardComparisonProgress() {
+      if (!comparisonState) return;
+      if (!confirm('Recomeçar esta comparação? Todas as decisões, ajustes e o comentário geral salvos serão apagados.')) return;
+      const id = comparisonProgressId(comparisonState.firstId, comparisonState.secondId);
+      delete comparisonsData[id];
+      persistComparisonsCache();
+      deleteComparisonFromCloud(id);
+      comparisonState.model.diffs.forEach(d => { d.status = 'pending'; d.resolutionMode = 'standard'; d.adjusted = null; });
+      comparisonState.comment = '';
+      comparisonState.editingDiffId = null;
+      document.getElementById('compare-general-comment').value = '';
+      setComparisonProgressStatus('O andamento é salvo automaticamente.');
+      renderComparison();
+      showToast('Comparação reiniciada.', 'info');
     }
 
     async function loadChartsFromFirestore() {
@@ -2152,6 +2383,7 @@
         firstId, secondId,
         model: buildComparisonModel(first, second),
         editingDiffId: null,
+        comment: '',
         cameras: {
           left: { zoom: .82, panX: 0, panY: 28 },
           right: { zoom: .82, panX: 0, panY: 28 }
@@ -2165,9 +2397,15 @@
       document.getElementById('compare-right-title').textContent = second.name || '2º organograma';
       document.getElementById('compare-header-subtitle').textContent = `${first.name || 'Base'}  ×  ${second.name || 'Comparado'}`;
       document.getElementById('compare-search').value = '';
+      document.getElementById('compare-general-comment').value = '';
       document.getElementById('compare-type-filter').value = 'all';
       document.getElementById('compare-status-filter').value = 'all';
+      setComparisonProgressStatus('O andamento é salvo automaticamente.');
+      const savedProgress = comparisonsData[comparisonProgressId(firstId, secondId)];
+      const restored = savedProgress ? applyComparisonProgress(savedProgress) : null;
       renderComparison();
+      if (restored) announceRestoredProgress(savedProgress, restored);
+      syncComparisonProgressFromCloud(firstId, secondId);
       setTimeout(centerCompareViews, 80);
     }
 
@@ -2348,6 +2586,7 @@
       diff.adjusted = null;
       comparisonState.editingDiffId = null;
       renderComparison();
+      queueComparisonProgressSave();
     }
 
     function beginAdjustDifference(diffId) {
@@ -2376,6 +2615,7 @@
       diff.resolutionMode = 'custom';
       comparisonState.editingDiffId = null;
       renderComparison();
+      queueComparisonProgressSave();
       showToast("Ajuste salvo e aprovado.", "success");
     }
 
@@ -2707,6 +2947,7 @@
         generatedAt: Date.now(),
         baseName: baseChart.name || 'Organograma base',
         targetName: targetChart.name || '2º organograma',
+        comment: (comparisonState && comparisonState.comment || '').trim(),
         approved, adjusted, rejected, pending
       };
     }
@@ -2724,12 +2965,18 @@
             </ul>
           </div>`;
       };
-      return [
+      const commentHtml = report.comment ? `
+          <div style="margin-bottom:20px;padding:10px 12px;border:1px solid #ddd6fe;background:#f5f3ff;border-radius:8px;">
+            <h4 style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#6d28d9;margin:0 0 6px;font-weight:700;">Comentário geral</h4>
+            <p style="margin:0;font-size:13px;color:#1e293b;white-space:pre-wrap;">${escapeHtml(report.comment)}</p>
+          </div>` : '';
+      const sectionsHtml = [
         section('Aprovadas', '#059669', report.approved),
         section('Ajustadas', '#d97706', report.adjusted),
         section('Rejeitadas', '#e11d48', report.rejected),
         section('Pendentes (não decididas)', '#64748b', report.pending)
       ].join('') || '<p style="font-size:13px;color:#64748b;">Nenhuma diferença registrada.</p>';
+      return commentHtml + sectionsHtml;
     }
 
     function buildConsolidationReportDocument(chart) {
@@ -2862,6 +3109,27 @@
           y += lines.length * 4.6 + 1.5;
         });
         y += 3;
+      }
+
+      // Comentário geral da comparação, num quadro antes das seções.
+      if (report.comment) {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        const commentLines = doc.splitTextToSize(report.comment, pageW - marginX * 2 - 8);
+        const boxH = 9 + commentLines.length * 4.6 + 3;
+        ensureSpace(boxH + 4);
+        doc.setDrawColor(221, 214, 254);
+        doc.setFillColor(245, 243, 255);
+        doc.roundedRect(marginX, y - 4, pageW - marginX * 2, boxH, 2, 2, 'FD');
+        doc.setFont('helvetica', 'bold');
+        doc.setFontSize(10);
+        doc.setTextColor(109, 40, 217);
+        doc.text('Comentário geral', marginX + 4, y + 1.5);
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(9.5);
+        doc.setTextColor(30, 41, 59);
+        doc.text(commentLines, marginX + 4, y + 7.5);
+        y += boxH + 4;
       }
 
       drawSection('Aprovadas', [5, 150, 105], report.approved);
@@ -3027,8 +3295,16 @@
       selectedNodeId = null;
       collapsedNodes.clear();
       globalMaxLayer = 99;
+      lastLayerVertical = !!chartsData[id].lastLayerVertical;
+      syncLastLayerButtons();
       resetHistory();
-      
+      // A busca de um organograma não deve continuar ativa ao abrir outro.
+      searchQuery = '';
+      searchMatchIndex = 0;
+      const searchInput = document.getElementById('search-input');
+      if (searchInput) searchInput.value = '';
+      updateSearchCounter(0, 0);
+
       // Update UI Headers
       document.getElementById('app-header-title').innerText = chartsData[id].name;
       document.getElementById('app-header-subtitle').innerText = chartsData[id].subtitle;
@@ -3073,6 +3349,12 @@
         delete chartsData[id];
         persistLocalCache();
         deleteChartFromCloud(id);
+        // Andamentos de comparação que envolviam este organograma perdem o sentido.
+        Object.values(comparisonsData).filter(c => c.firstId === id || c.secondId === id).forEach(c => {
+          delete comparisonsData[c.id];
+          deleteComparisonFromCloud(c.id);
+        });
+        persistComparisonsCache();
         renderDashboard();
         showToast("Organograma excluído.", "info");
       }
@@ -3397,7 +3679,30 @@
     // Em todos os casos, a "dobra" fica a uma distância fixa da caixa de
     // cima, para que mover na horizontal só afete o trecho horizontal e
     // mover na vertical só afete o trecho vertical.
-    function buildLayoutConnectorPath(p, c, childType, parentType, originX, originY) {
+    // Para cada caixa, a base mais baixa de toda a sua subárvore de
+    // assessoria (assessorias diretas e as subordinadas delas). Usado para
+    // que a linha até as filhas de linha só faça a curva de 90° depois de
+    // passar por todas as assessorias, sem cruzar nenhuma delas.
+    function computeStaffSubtreeBottoms() {
+      const childrenOf = {};
+      layoutNodesFlat.forEach(n => {
+        if (n.parentId) (childrenOf[n.parentId] = childrenOf[n.parentId] || []).push(n);
+      });
+      function subtreeBottom(node) {
+        const pos = getLayoutPosition(node);
+        let bottom = pos.y + pos.h;
+        (childrenOf[node.id] || []).forEach(c => { bottom = Math.max(bottom, subtreeBottom(c)); });
+        return bottom;
+      }
+      const result = {};
+      layoutNodesFlat.forEach(n => {
+        const staff = (childrenOf[n.id] || []).filter(c => c.type === 'assessoria');
+        if (staff.length) result[n.id] = Math.max(...staff.map(subtreeBottom));
+      });
+      return result;
+    }
+
+    function buildLayoutConnectorPath(p, c, childType, parentType, originX, originY, staffBottom) {
       if (childType === 'assessoria') {
         const childCenterX = c.x - originX + c.w / 2;
         const childCenterY = c.y - originY + c.h / 2;
@@ -3426,7 +3731,13 @@
       const y1 = p.y - originY + p.h;
       const x2 = c.x - originX + c.w / 2;
       const y2 = c.y - originY;
-      const bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
+      let bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
+      if (staffBottom !== undefined) {
+        const belowStaff = staffBottom - originY + LAYOUT_CONNECTOR_BEND_GAP;
+        // Só desce abaixo das assessorias se a filha ainda estiver mais
+        // abaixo; se ela foi arrastada para cima delas, volta ao padrão.
+        if (belowStaff < y2) bendY = Math.max(bendY, belowStaff);
+      }
       return `M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}`;
     }
 
@@ -3440,13 +3751,14 @@
       const byId = {};
       layoutNodesFlat.forEach(n => { byId[n.id] = n; });
 
+      const staffBottoms = computeStaffSubtreeBottoms();
       let paths = '';
       layoutNodesFlat.forEach(n => {
         const parent = n.parentId ? byId[n.parentId] : null;
         if (!parent) return;
         const p = getLayoutPosition(parent);
         const c = getLayoutPosition(n);
-        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY)}"/>`;
+        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY, staffBottoms[parent.id])}"/>`;
       });
       svg.innerHTML = paths;
     }
@@ -3552,104 +3864,90 @@
       showToast('Posições restauradas.', 'info');
     }
 
-    // "Otimizar": reduz espaços vazios excessivos SEM recalcular o layout do
-    // zero — agrupa as caixas em "linhas" pela sobreposição vertical atual e
-    // fecha os vãos maiores do que o mínimo confortável, tanto entre linhas
-    // (vertical) quanto entre caixas vizinhas dentro da mesma linha
-    // (horizontal). Nunca aumenta um vão nem muda a ordem/agrupamento que já
-    // existe — só aproxima o que estiver espaçado demais.
     // "Otimizar": recalcula a posição de tudo a partir da hierarquia, com um
     // algoritmo de árvore compacta — o objetivo é reduzir a área total que o
-    // organograma ocupa, podendo mudar linhas e vizinhos (não é mais uma
-    // simples compactação de vãos). Unidades do tipo linha ficam empilhadas
-    // embaixo do pai, centralizadas; assessorias ficam ao lado do pai,
-    // alternando direita/esquerda (mesma convenção da tela principal) e
-    // empilhadas verticalmente quando há mais de uma do mesmo lado — cada
-    // uma com sua própria subárvore recalculada do mesmo jeito.
+    // organograma ocupa, podendo mudar linhas e vizinhos. Segue a mesma
+    // disposição da tela principal: as assessorias ficam logo abaixo do pai,
+    // alternando direita/esquerda da linha central, e as filhas de linha vêm
+    // abaixo de todas as assessorias (a curva da linha acontece só depois
+    // delas). Cada subárvore é calculada do mesmo jeito, recursivamente, e
+    // ocupa só a largura que realmente usa de cada lado da linha central.
     function optimizeLayoutPositions() {
       if (!layoutNodesFlat.length || !orgTree) return;
 
-      const GAP_X = 40;         // espaço horizontal entre subárvores irmãs
-      const GAP_Y = 70;         // espaço vertical entre pai e filhos (linha)
-      const STAFF_GAP = 40;     // espaço entre o pai e a assessoria ao lado
-      const STAFF_ROW_GAP = 16; // espaço entre assessorias empilhadas do mesmo lado
+      const GAP_X = 32;          // espaço horizontal entre subárvores irmãs
+      const GAP_Y = 56;          // espaço vertical até a fileira de filhas de linha
+      const STAFF_TOP_GAP = 20;  // espaço entre o pai e a 1ª fileira de assessorias
+      const STAFF_SPINE_GAP = 22;// distância da assessoria até a linha central
+      const STAFF_ROW_GAP = 14;  // espaço entre fileiras de assessorias
 
       const byId = {};
       layoutNodesFlat.forEach(n => { byId[n.id] = n; });
+      // A ordem das filhas vem da hierarquia (não da ordem no DOM, que na
+      // zona de assessoria desenha a da esquerda antes da da direita).
       const childrenOf = {};
       layoutNodesFlat.forEach(n => {
-        if (!n.parentId) return;
-        (childrenOf[n.parentId] = childrenOf[n.parentId] || []).push(n);
+        const dataNode = findNodeById(orgTree, n.id);
+        childrenOf[n.id] = (dataNode?.children || []).map(c => byId[c.id]).filter(Boolean);
       });
 
+      // Retorna as posições relativas a um eixo central x = 0 (linha central
+      // do nó) e y = 0 (topo do nó), mais quanto a subárvore ocupa à esquerda
+      // (left) e à direita (right) desse eixo, e sua altura.
       function layoutSubtree(nodeId) {
         const node = byId[nodeId];
         const children = childrenOf[nodeId] || [];
         const lineChildren = children.filter(c => c.type !== 'assessoria');
         const staffChildren = children.filter(c => c.type === 'assessoria');
 
-        const childLayouts = lineChildren.map(c => layoutSubtree(c.id));
-        const lineTotalWidth = childLayouts.reduce((s, cl, i) => s + cl.width + (i > 0 ? GAP_X : 0), 0);
-
-        // Assessorias alternam de lado na ordem original (1ª direita, 2ª
-        // esquerda...), cada uma com a própria subárvore.
-        const rightLayouts = [], leftLayouts = [];
-        staffChildren.forEach((sc, i) => {
-          const scLayout = layoutSubtree(sc.id);
-          (i % 2 === 0 ? rightLayouts : leftLayouts).push(scLayout);
-        });
-        const rightWidth = rightLayouts.length ? Math.max(...rightLayouts.map(l => l.width)) : 0;
-        const leftWidth = leftLayouts.length ? Math.max(...leftLayouts.map(l => l.width)) : 0;
-        const rightHeight = rightLayouts.reduce((s, l, i) => s + l.height + (i > 0 ? STAFF_ROW_GAP : 0), 0);
-        const leftHeight = leftLayouts.reduce((s, l, i) => s + l.height + (i > 0 ? STAFF_ROW_GAP : 0), 0);
-
-        const coreWidth = Math.max(node.w, lineTotalWidth);
-        const leftExtra = leftLayouts.length ? leftWidth + STAFF_GAP : 0;
-        const rightExtra = rightLayouts.length ? rightWidth + STAFF_GAP : 0;
-        const totalWidth = leftExtra + coreWidth + rightExtra;
-
         const positions = {};
+        positions[node.id] = { x: -node.w / 2, y: 0 };
+        let left = node.w / 2, right = node.w / 2, height = node.h;
 
-        // Caixa do próprio nó: centralizada no "núcleo" (ela + filhos-linha).
-        const nodeX = leftExtra + (coreWidth - node.w) / 2;
-        positions[node.id] = { x: nodeX, y: 0, w: node.w, h: node.h };
-
-        // Filhos do tipo linha: lado a lado, centralizados sob o núcleo.
-        const childrenStartX = leftExtra + (coreWidth - lineTotalWidth) / 2;
-        let cursorX = childrenStartX;
-        childLayouts.forEach(cl => {
-          Object.entries(cl.positions).forEach(([id, pos]) => {
-            positions[id] = { x: pos.x + cursorX, y: pos.y + node.h + GAP_Y, w: pos.w, h: pos.h };
+        // Assessorias: fileiras abaixo do pai, 1ª à direita, 2ª à esquerda...
+        let rowY = node.h + STAFF_TOP_GAP;
+        for (let i = 0; i < staffChildren.length; i += 2) {
+          const pair = [
+            { sub: layoutSubtree(staffChildren[i].id), side: 'right' },
+            staffChildren[i + 1] ? { sub: layoutSubtree(staffChildren[i + 1].id), side: 'left' } : null
+          ].filter(Boolean);
+          let rowHeight = 0;
+          pair.forEach(({ sub, side }) => {
+            // Encosta o lado interno da subárvore na linha central (+ folga).
+            const shiftX = side === 'right' ? STAFF_SPINE_GAP + sub.left : -(STAFF_SPINE_GAP + sub.right);
+            Object.entries(sub.positions).forEach(([id, pos]) => {
+              positions[id] = { x: pos.x + shiftX, y: pos.y + rowY };
+            });
+            if (side === 'right') right = Math.max(right, STAFF_SPINE_GAP + sub.left + sub.right);
+            else left = Math.max(left, STAFF_SPINE_GAP + sub.left + sub.right);
+            rowHeight = Math.max(rowHeight, sub.height);
           });
-          cursorX += cl.width + GAP_X;
-        });
+          height = Math.max(height, rowY + rowHeight);
+          rowY += rowHeight + STAFF_ROW_GAP;
+        }
 
-        // Assessorias à direita, empilhadas e centralizadas na altura do pai.
-        let rightCursorY = (node.h - rightHeight) / 2;
-        rightLayouts.forEach(l => {
-          const baseX = leftExtra + coreWidth + STAFF_GAP;
-          Object.entries(l.positions).forEach(([id, pos]) => {
-            positions[id] = { x: pos.x + baseX, y: pos.y + rightCursorY, w: pos.w, h: pos.h };
+        // Filhas de linha: lado a lado, abaixo de tudo o que já foi posto,
+        // com o conjunto centralizado na linha central do pai.
+        if (lineChildren.length) {
+          const subs = lineChildren.map(c => layoutSubtree(c.id));
+          const total = subs.reduce((sum, sub, i) => sum + sub.left + sub.right + (i > 0 ? GAP_X : 0), 0);
+          const childY = height + GAP_Y;
+          let cursor = -total / 2;
+          let childrenHeight = 0;
+          subs.forEach(sub => {
+            const axis = cursor + sub.left;
+            Object.entries(sub.positions).forEach(([id, pos]) => {
+              positions[id] = { x: pos.x + axis, y: pos.y + childY };
+            });
+            cursor += sub.left + sub.right + GAP_X;
+            childrenHeight = Math.max(childrenHeight, sub.height);
           });
-          rightCursorY += l.height + STAFF_ROW_GAP;
-        });
+          left = Math.max(left, total / 2);
+          right = Math.max(right, total / 2);
+          height = childY + childrenHeight;
+        }
 
-        // Assessorias à esquerda, mesma lógica, espelhada.
-        let leftCursorY = (node.h - leftHeight) / 2;
-        leftLayouts.forEach(l => {
-          const baseX = leftExtra - STAFF_GAP - l.width;
-          Object.entries(l.positions).forEach(([id, pos]) => {
-            positions[id] = { x: pos.x + baseX, y: pos.y + leftCursorY, w: pos.w, h: pos.h };
-          });
-          leftCursorY += l.height + STAFF_ROW_GAP;
-        });
-
-        const lineBranchHeight = childLayouts.length
-          ? (node.h + GAP_Y + Math.max(...childLayouts.map(cl => cl.height)))
-          : node.h;
-        const totalHeight = Math.max(lineBranchHeight, rightCursorY, leftCursorY);
-
-        return { width: totalWidth, height: totalHeight, positions };
+        return { positions, left, right, height };
       }
 
       const rootLayout = layoutSubtree(orgTree.id);
@@ -3665,8 +3963,10 @@
       const anchorX = isFinite(minX) ? minX : 0;
       const anchorY = isFinite(minY) ? minY : 0;
 
+      // As posições vêm relativas à linha central da raiz; desloca para que a
+      // borda esquerda do conjunto fique no canto original.
       Object.entries(rootLayout.positions).forEach(([id, pos]) => {
-        layoutOverridesDraft[id] = { x: pos.x + anchorX, y: pos.y + anchorY };
+        layoutOverridesDraft[id] = { x: pos.x + rootLayout.left + anchorX, y: pos.y + anchorY };
       });
 
       updateLayoutPositionsOnly();
@@ -3746,13 +4046,14 @@
 
       const byId = {};
       layoutNodesFlat.forEach(n => { byId[n.id] = n; });
+      const staffBottoms = computeStaffSubtreeBottoms();
       let paths = '';
       layoutNodesFlat.forEach(n => {
         const parent = n.parentId ? byId[n.parentId] : null;
         if (!parent) return;
         const p = getLayoutPosition(parent);
         const c = getLayoutPosition(n);
-        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY)}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
+        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY, staffBottoms[parent.id])}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
       });
       svg.innerHTML = paths;
       viewport.style.position = 'relative';
@@ -3832,28 +4133,31 @@
       const safeName = escapeHtml(node.name || 'Sem nome');
       const safeSigla = escapeHtml(node.sigla || '');
 
+      // Última camada em coluna: a espinha sai do canto inferior esquerdo do
+      // pai e as assessorias dele vão todas para a direita.
+      const useVertical = hasLineChildren && !isCollapsed && lastLayerVertical && isTerminalRow(lineChildren);
+
       let staffHtml = '';
       if (hasStaffChildren && !isCollapsed) {
-        staffHtml = renderStaffZoneHtml(staffChildren, depth + 1);
+        staffHtml = renderStaffZoneHtml(staffChildren, depth + 1, useVertical);
       }
 
       let downwardConnector = '';
       let lineHtml = '';
       if (hasLineChildren && !isCollapsed) {
-        downwardConnector = `<div class="mx-auto w-[2px] bg-slate-300 relative z-0" style="height: 25px;"></div>`;
-        const useVertical = lastLayerVertical && isTerminalRow(lineChildren);
+        if (!useVertical) downwardConnector = `<div class="mx-auto w-[2px] bg-slate-300 relative z-0" style="height: 25px;"></div>`;
         lineHtml = `<ul class="${useVertical ? 'vertical-layer' : ''}">${lineChildren.map(c => renderNodeHtml(c, depth + 1)).join('')}</ul>`;
       }
 
       return `
         <li id="li-${node.id}">
-          <div class="node-wrapper">
+          <div class="node-wrapper${useVertical ? ' vl-parent' : ''}">
             <div id="card-${node.id}"
                  draggable="true" ondragstart="handleDragStart(event, '${node.id}')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${node.id}')"
                  onclick="selectNode('${node.id}', event)"
                  onmouseenter="showUnitTooltip(event, '${node.id}')" onmousemove="moveUnitTooltip(event)" onmouseleave="hideUnitTooltip()"
                  class="node-card border-t-[5px] ${style.border} ${isSelected ? 'ring-2 ring-indigo-500 shadow-xl scale-[1.02]' : 'shadow-md hover:shadow-lg'}
-                        ${matchesSearch ? 'ring-4 ring-amber-400 bg-amber-50' : 'bg-white'}
+                        ${matchesSearch ? 'search-match ring-4 ring-amber-400 bg-amber-50' : 'bg-white'}
                         w-52 rounded-xl border-x border-b border-slate-200 p-3 transition-all duration-200 cursor-pointer relative z-20 group">
 
               <div class="flex flex-col items-center text-center">
@@ -3863,7 +4167,10 @@
 
               <div class="absolute -right-3 -top-3 hidden group-hover:flex bg-white shadow-md border border-slate-200 rounded-lg p-1 gap-1 z-30">
                 <button onclick="event.stopPropagation(); openAddModalForParent('${node.id}')" class="w-6 h-6 rounded hover:bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs" title="Adicionar Subordinada"><i class="fa-solid fa-plus"></i></button>
-                ${node.id !== orgTree.id ? `<button onclick="event.stopPropagation(); deleteUnit('${node.id}')" class="w-6 h-6 rounded hover:bg-rose-50 text-rose-500 flex items-center justify-center text-xs" title="Excluir"><i class="fa-solid fa-trash"></i></button>` : ''}
+                ${node.id === orgTree.id
+                  ? `<button onclick="event.stopPropagation(); openAddAboveRootModal()" class="w-6 h-6 rounded hover:bg-indigo-50 text-indigo-600 flex items-center justify-center text-xs" title="Criar unidade superior (acima do topo)"><i class="fa-solid fa-arrow-up"></i></button>`
+                  : `<button onclick="event.stopPropagation(); promoteToRoot('${node.id}')" class="w-6 h-6 rounded hover:bg-amber-50 text-amber-600 flex items-center justify-center text-xs" title="Tornar unidade superior (topo)"><i class="fa-solid fa-crown"></i></button>`}
+                <button onclick="event.stopPropagation(); deleteUnit('${node.id}')" class="w-6 h-6 rounded hover:bg-rose-50 text-rose-500 flex items-center justify-center text-xs" title="Excluir"><i class="fa-solid fa-trash"></i></button>
               </div>
 
               ${hasAnyChildren ? `
@@ -3884,12 +4191,14 @@
     }
 
     /* Assessorias no formato lateral/zigue-zague do dashboard original. */
-    function renderStaffZoneHtml(staffChildren, depth) {
+    function renderStaffZoneHtml(staffChildren, depth, allRight = false) {
       const rows = [];
-      for (let i = 0; i < staffChildren.length; i += 2) {
+      const step = allRight ? 1 : 2;
+      for (let i = 0; i < staffChildren.length; i += step) {
         // No desenho original: 1ª assessoria à direita, 2ª à esquerda.
+        // Com a última camada em coluna, todas ficam à direita.
         const rightNode = staffChildren[i] || null;
-        const leftNode = staffChildren[i + 1] || null;
+        const leftNode = allRight ? null : (staffChildren[i + 1] || null);
         rows.push(`
           <div class="staff-row">
             <div class="staff-cell staff-cell-left">
@@ -3902,7 +4211,7 @@
           </div>
         `);
       }
-      return `<div class="staff-zone">${rows.join('')}</div>`;
+      return `<div class="staff-zone${allRight ? ' all-right' : ''}">${rows.join('')}</div>`;
     }
 
     function renderStaffBranchHtml(node, depth, side) {
@@ -3932,7 +4241,7 @@
              onclick="selectNode('${node.id}', event)"
              onmouseenter="showUnitTooltip(event, '${node.id}')" onmousemove="moveUnitTooltip(event)" onmouseleave="hideUnitTooltip()"
              class="node-card relative z-10 w-44 bg-white ${sideBorder} border-purple-500 border-y border-slate-200 rounded-lg shadow-sm p-3 cursor-pointer transition-all hover:shadow-md group flex items-center justify-center
-                    ${isSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/30 scale-[1.02]' : ''} ${matchesSearch ? 'ring-4 ring-amber-400 bg-amber-50' : ''}">
+                    ${isSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/30 scale-[1.02]' : ''} ${matchesSearch ? 'search-match ring-4 ring-amber-400 bg-amber-50' : ''}">
           <div class="w-full text-center">
             <div class="unit-name text-xs font-bold text-slate-800 leading-snug break-words w-full">${safeName}</div>
             ${safeSigla ? `<div class="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">${safeSigla}</div>` : ''}
@@ -3997,7 +4306,7 @@
                onclick="selectNode('${node.id}', event)"
                onmouseenter="showUnitTooltip(event, '${node.id}')" onmousemove="moveUnitTooltip(event)" onmouseleave="hideUnitTooltip()"
                class="node-card staff-descendant-card relative z-10 bg-white ${unitBorder} rounded-lg shadow-sm p-3 cursor-pointer transition-all hover:shadow-md group flex items-center justify-center
-                      ${isSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/30 scale-[1.02]' : ''} ${matchesSearch ? 'ring-4 ring-amber-400 bg-amber-50' : ''}">
+                      ${isSelected ? 'ring-2 ring-indigo-500 bg-indigo-50/30 scale-[1.02]' : ''} ${matchesSearch ? 'search-match ring-4 ring-amber-400 bg-amber-50' : ''}">
             <div class="w-full text-center">
               <div class="staff-descendant-name unit-name text-xs font-bold text-slate-800 leading-snug w-full" title="${safeName}">${safeName}</div>
               ${safeSigla ? `<div class="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-500 break-words">${safeSigla}</div>` : ''}
@@ -4135,19 +4444,75 @@
       return children.every(c => !(c.children && c.children.length) || collapsedNodes.has(c.id));
     }
 
-    function toggleLastLayerOrientation() {
-      lastLayerVertical = !lastLayerVertical;
-      const btn = document.getElementById('last-layer-orientation-btn');
-      if (btn) {
+    // Atualiza a aparência dos botões "Última camada" (tela principal e
+    // Ajustar Layout) conforme a orientação atual.
+    function syncLastLayerButtons() {
+      ['last-layer-orientation-btn', 'layout-last-layer-btn'].forEach(btnId => {
+        const btn = document.getElementById(btnId);
+        if (!btn) return;
         btn.classList.toggle('bg-indigo-100', lastLayerVertical);
         btn.classList.toggle('text-indigo-700', lastLayerVertical);
         const icon = btn.querySelector('i');
-        if (icon) icon.className = lastLayerVertical ? 'fa-solid fa-grip-lines-vertical' : 'fa-solid fa-grip-lines';
+        if (icon) icon.className = (lastLayerVertical ? 'fa-solid fa-grip-lines-vertical' : 'fa-solid fa-grip-lines') + (btnId === 'layout-last-layer-btn' ? ' text-xs' : '');
         btn.title = lastLayerVertical
           ? 'Última camada: vertical (clique para voltar à horizontal)'
           : 'Última camada: horizontal (clique para deixar vertical)';
-      }
+      });
+    }
+
+    // Ids das caixas cujo desenho muda quando a última camada troca de
+    // orientação: as unidades da fileira vertical e as assessorias do pai
+    // dessa fileira (que passam a ficar todas à direita).
+    function collectLastLayerAffectedIds() {
+      const ids = new Set();
+      const root = document.getElementById('tree-root');
+      if (!root) return ids;
+      root.querySelectorAll('ul.vertical-layer .node-card, .staff-zone.all-right .node-card').forEach(el => ids.add(el.id.replace(/^card-/, '')));
+      return ids;
+    }
+
+    // Troca a orientação da última camada. As posições manuais do Ajustar
+    // Layout são preservadas assim: as caixas afetadas pela troca perdem o
+    // ajuste (voltam à posição natural da nova orientação) e as demais
+    // mantêm o mesmo deslocamento que tinham em relação à posição natural.
+    function toggleLastLayerOrientation() {
+      const layoutOpen = !document.getElementById('layout-adjust-screen')?.classList.contains('hidden');
+      const chart = currentChartId ? chartsData[currentChartId] : null;
+      const before = buildLayoutFlatNodes() || [];
+      const affected = collectLastLayerAffectedIds();
+
+      lastLayerVertical = !lastLayerVertical;
+      syncLastLayerButtons();
       renderApp();
+
+      const after = buildLayoutFlatNodes() || [];
+      collectLastLayerAffectedIds().forEach(id => affected.add(id));
+
+      if (chart) {
+        const source = layoutOpen ? layoutOverridesDraft : (chart.layoutOverrides || {});
+        const beforeMap = new Map(before.map(n => [n.id, n]));
+        const afterMap = new Map(after.map(n => [n.id, n]));
+        const remapped = {};
+        let dropped = 0;
+        Object.entries(source).forEach(([id, pos]) => {
+          if (affected.has(id)) { dropped++; return; }
+          const b = beforeMap.get(id), a = afterMap.get(id);
+          remapped[id] = (a && b) ? { x: pos.x + (a.x - b.x), y: pos.y + (a.y - b.y) } : pos;
+        });
+        chart.lastLayerVertical = lastLayerVertical;
+        if (layoutOpen) {
+          layoutOverridesDraft = remapped;
+          layoutNodesFlat = after.length ? after : layoutNodesFlat;
+          renderLayoutCanvas();
+          commitLayoutChange(); // também salva o organograma (orientação incluída)
+        } else {
+          if (Object.keys(source).length) chart.layoutOverrides = remapped;
+          chart.updatedAt = Date.now();
+          persistLocalCache();
+          queueCloudSave(currentChartId);
+        }
+        if (dropped) showToast(`${dropped} ajuste(s) manual(is) da última camada foram descartados na troca de orientação.`, 'info');
+      }
     }
 
     function changeLayer(delta) {
@@ -4250,7 +4615,7 @@
     }
     function deleteCurrentUnit() { if (selectedNodeId) deleteUnit(selectedNodeId); }
     function deleteUnit(id) {
-      if (id === orgTree.id) { showToast("Não é possível excluir o topo.", "error"); return; }
+      if (id === orgTree.id) { openRemoveRootModal(); return; }
       const parent = findParentNode(orgTree, id);
       const node = findNodeById(orgTree, id);
       if (!parent || !node) return;
@@ -4265,24 +4630,109 @@
       }
     }
 
+    // "Tornar unidade superior": a unidade escolhida sai de onde está (com
+    // toda a sua subárvore) e vira o topo; o topo atual, com o restante do
+    // organograma, passa a ser subordinado a ela.
+    function promoteToRoot(id) {
+      if (!orgTree || id === orgTree.id) return;
+      const node = findNodeById(orgTree, id);
+      const parent = findParentNode(orgTree, id);
+      if (!node || !parent) return;
+      if (!confirm(`Tornar "${node.name}" a unidade superior do organograma?\n\n"${orgTree.name}" (com o restante do organograma) passará a ser subordinada a ela.`)) return;
+      recordHistoryState();
+      parent.children = parent.children.filter(c => c.id !== id);
+      const oldRoot = orgTree;
+      if (oldRoot.type !== 'linha') oldRoot.type = 'linha';
+      node.type = 'linha';
+      if (!node.children) node.children = [];
+      node.children.unshift(oldRoot);
+      orgTree = node;
+      collapsedNodes.delete(node.id);
+      saveData(); renderApp(); selectNode(node.id);
+      setTimeout(centerTree, 60);
+      showToast(`"${node.name}" agora é a unidade superior.`, "success");
+    }
+
+    // Remover o topo: uma das subordinadas diretas vira o novo topo e as
+    // demais subordinadas diretas passam a ficar abaixo dela.
+    function openRemoveRootModal() {
+      const children = orgTree?.children || [];
+      if (!children.length) { showToast("O topo é a única unidade do organograma e não pode ser removido.", "error"); return; }
+      document.getElementById('remove-root-name').textContent = orgTree.name || 'Sem nome';
+      const select = document.getElementById('remove-root-new-top');
+      select.innerHTML = '';
+      // Unidades de linha primeiro (são as candidatas naturais a topo).
+      [...children].sort((a, b) => (a.type === 'assessoria') - (b.type === 'assessoria')).forEach(c => {
+        const opt = document.createElement('option');
+        opt.value = c.id;
+        opt.text = `${c.name || 'Sem nome'}${c.sigla ? ' (' + c.sigla + ')' : ''}${c.type === 'assessoria' ? ' — assessoria' : ''}`;
+        select.appendChild(opt);
+      });
+      select.onchange = updateRemoveRootOthers;
+      updateRemoveRootOthers();
+      document.getElementById('remove-root-modal').classList.remove('hidden');
+    }
+    function updateRemoveRootOthers() {
+      const chosen = document.getElementById('remove-root-new-top').value;
+      const others = (orgTree?.children || []).filter(c => c.id !== chosen);
+      document.getElementById('remove-root-others').textContent = others.length
+        ? `As outras ${others.length} unidade(s) subordinada(s) ao topo atual passarão a ficar abaixo da unidade escolhida, mantendo suas próprias subordinadas.`
+        : 'Não há outras unidades diretamente subordinadas ao topo atual.';
+    }
+    function closeRemoveRootModal() { document.getElementById('remove-root-modal').classList.add('hidden'); }
+    function confirmRemoveRoot() {
+      const chosenId = document.getElementById('remove-root-new-top').value;
+      const oldRoot = orgTree;
+      const chosen = (oldRoot?.children || []).find(c => c.id === chosenId);
+      if (!chosen) return;
+      recordHistoryState();
+      const others = oldRoot.children.filter(c => c.id !== chosenId);
+      chosen.type = 'linha';
+      if (!chosen.children) chosen.children = [];
+      chosen.children.push(...others);
+      orgTree = chosen;
+      if (selectedNodeId === oldRoot.id) closeSidebar();
+      collapsedNodes.delete(chosen.id);
+      closeRemoveRootModal();
+      saveData(); renderApp();
+      setTimeout(centerTree, 60);
+      showToast(`"${oldRoot.name}" removida. "${chosen.name}" agora é a unidade superior.`, "info");
+    }
+
     /* --- ADD MODAL (APP) --- */
     function openAddModalForParent(parentId) {
       const select = document.getElementById('modal-parent-id');
       select.innerHTML = '';
+      const above = document.createElement('option');
+      above.value = '__above_root__';
+      above.text = `⬆ Nova unidade superior (acima de "${orgTree.name || 'topo atual'}")`;
+      if (parentId === '__above_root__') above.selected = true;
+      select.appendChild(above);
       getAllNodesList(orgTree).forEach(n => {
         const opt = document.createElement('option');
         opt.value = n.id; opt.text = n.name;
         if (n.id === parentId) opt.selected = true;
         select.appendChild(opt);
       });
+      updateAddModalParentHint();
       document.getElementById('add-modal').classList.remove('hidden');
+    }
+    function openAddAboveRootModal() { openAddModalForParent('__above_root__'); }
+    function updateAddModalParentHint() {
+      const isAbove = document.getElementById('modal-parent-id').value === '__above_root__';
+      document.getElementById('modal-parent-hint').classList.toggle('hidden', !isAbove);
+      const typeSel = document.getElementById('modal-type');
+      if (isAbove) typeSel.value = 'linha';
+      typeSel.disabled = isAbove;
     }
     function openAddModal() { openAddModalForParent(selectedNodeId || orgTree.id); }
     function closeAddModal() { document.getElementById('add-modal').classList.add('hidden'); }
     function handleAddFormSubmit(event) {
       event.preventDefault();
-      const parent = findNodeById(orgTree, document.getElementById('modal-parent-id').value);
-      if (!parent) return;
+      const parentValue = document.getElementById('modal-parent-id').value;
+      const isAboveRoot = parentValue === '__above_root__';
+      const parent = isAboveRoot ? null : findNodeById(orgTree, parentValue);
+      if (!parent && !isAboveRoot) return;
       recordHistoryState();
       const newNode = {
         id: "node-" + Date.now(),
@@ -4292,19 +4742,94 @@
         serversCount: parseInt(document.getElementById('modal-servers').value) || 0,
         description: "", children: []
       };
-      if (!parent.children) parent.children = [];
-      parent.children.push(newNode);
-      collapsedNodes.delete(parent.id);
+      if (isAboveRoot) {
+        // A nova unidade vira o topo; o topo antigo fica subordinado a ela.
+        newNode.type = 'linha';
+        if (orgTree.type !== 'linha') orgTree.type = 'linha';
+        newNode.children = [orgTree];
+        orgTree = newNode;
+      } else {
+        if (!parent.children) parent.children = [];
+        parent.children.push(newNode);
+        collapsedNodes.delete(parent.id);
+      }
       saveData(); closeAddModal(); renderApp(); selectNode(newNode.id);
-      showToast("Unidade criada!", "success");
+      if (isAboveRoot) setTimeout(centerTree, 60);
+      showToast(isAboveRoot ? "Nova unidade superior criada!" : "Unidade criada!", "success");
       event.target.reset();
+      updateAddModalParentHint();
     }
 
     /* --- UTILS --- */
+    let searchMatchIndex = 0;
+
     function handleSearch(val) {
       searchQuery = val.trim();
       if (searchQuery !== "") collapsedNodes.clear();
       renderApp();
+      searchMatchIndex = 0;
+      focusSearchMatch();
+    }
+
+    // Enter vai para o próximo resultado; Shift+Enter, para o anterior.
+    function handleSearchKeydown(event) {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      const total = document.querySelectorAll('#tree-root .search-match').length;
+      if (!total) return;
+      searchMatchIndex = (searchMatchIndex + (event.shiftKey ? -1 : 1) + total) % total;
+      focusSearchMatch();
+    }
+
+    function updateSearchCounter(current, total) {
+      const counter = document.getElementById('search-counter');
+      if (!counter) return;
+      if (!searchQuery) { counter.classList.add('hidden'); return; }
+      counter.classList.remove('hidden');
+      counter.textContent = total ? `${current} de ${total}` : 'nenhum';
+      counter.classList.toggle('text-rose-500', !total);
+    }
+
+    // Centraliza na tela a caixa do resultado atual, mantendo o zoom.
+    function focusSearchMatch() {
+      const matches = Array.from(document.querySelectorAll('#tree-root .search-match'));
+      updateSearchCounter(matches.length ? searchMatchIndex + 1 : 0, matches.length);
+      matches.forEach(el => el.classList.remove('search-current'));
+      const target = matches[searchMatchIndex];
+      if (!target) return;
+      target.classList.add('search-current');
+      centerOnElement(target);
+    }
+
+    function centerOnElement(el) {
+      const container = document.getElementById('canvas-container');
+      const viewport = document.getElementById('tree-viewport');
+      if (!container || !viewport || !el) return;
+      const cRect = container.getBoundingClientRect();
+      const vRect = viewport.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      // Posição da caixa no espaço do organograma (sem zoom/pan).
+      const worldX = (r.left + r.width / 2 - vRect.left) / zoomLevel;
+      const worldY = (r.top + r.height / 2 - vRect.top) / zoomLevel;
+      animatePanTo(cRect.width / 2 - worldX * zoomLevel, cRect.height / 2 - worldY * zoomLevel);
+    }
+
+    let _panAnimationId = null;
+    function animatePanTo(targetX, targetY, duration = 320) {
+      const viewport = document.getElementById('tree-viewport');
+      if (viewport) viewport.style.transition = 'none';
+      cancelAnimationFrame(_panAnimationId);
+      const startX = panX, startY = panY, startTime = performance.now();
+      function step(now) {
+        const t = Math.min(1, (now - startTime) / duration);
+        const ease = 1 - Math.pow(1 - t, 3);
+        panX = startX + (targetX - startX) * ease;
+        panY = startY + (targetY - startY) * ease;
+        applyTransform();
+        if (t < 1) _panAnimationId = requestAnimationFrame(step);
+        else if (viewport) viewport.style.transition = '';
+      }
+      _panAnimationId = requestAnimationFrame(step);
     }
     function findNodeById(node, id) {
       if (node.id === id) return node;

@@ -4,7 +4,8 @@ rules_version = '2';
 //
 // IMPORTANTE — leia antes de publicar:
 // Este projeto não usa nenhum login (Firebase Authentication). As regras
-// abaixo liberam leitura e escrita da coleção "orgCharts" para qualquer
+// abaixo liberam leitura e escrita das coleções "orgCharts", "orgFolders" e
+// "orgComparisons" para qualquer
 // pessoa que tenha a URL do site publicado no GitHub Pages. Isso é aceitável
 // para uma ferramenta interna, de acesso restrito/não divulgado, mas significa
 // que qualquer pessoa com o link poderia editar ou apagar os organogramas.
@@ -42,6 +43,18 @@ service cloud.firestore {
         && request.resource.data.keys().hasAll(['id', 'name'])
         && request.resource.data.id is string
         && request.resource.data.name is string;
+      allow delete: if true;
+    }
+
+    // Andamento das comparações (decisões, ajustes e comentário geral),
+    // para poder sair da tela de comparação e continuar depois.
+    match /orgComparisons/{comparisonId} {
+      allow read: if true;
+      allow create, update: if true
+        && request.resource.data.keys().hasAll(['id', 'firstId', 'secondId'])
+        && request.resource.data.id is string
+        && request.resource.data.firstId is string
+        && request.resource.data.secondId is string;
       allow delete: if true;
     }
 
