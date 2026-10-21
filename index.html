@@ -3799,6 +3799,10 @@
     const LAYOUT_ROUTE_STUB = 12;
     const LAYOUT_ROUTE_BEND_COST = 40;
     const LAYOUT_ROUTE_AREA_PAD = 320;
+    // Tempo máximo de cálculo de desvios por quadro na tela, para o arraste
+    // continuar fluido em organogramas grandes.
+    const LAYOUT_ROUTE_FRAME_BUDGET_MS = 24;
+    let layoutConnectorsRetryTimer = null;
 
     // Para cada caixa, a base mais baixa de toda a sua subárvore de
     // assessoria (assessorias diretas e as subordinadas delas). Usado para
@@ -3908,48 +3912,91 @@
       return false;
     }
 
+    // Desvios já calculados, pela posição das portas e das caixas próximas.
+    // Ao arrastar, só as linhas perto da caixa movida mudam de chave e são
+    // recalculadas; as demais vêm daqui.
+    const layoutRouteCache = new Map();
+    const LAYOUT_ROUTE_CACHE_LIMIT = 4000;
+
     // Procura um trajeto em ângulo reto que não passe por trás de nenhuma
     // caixa: monta uma grade com as bordas (com folga) das caixas próximas e
     // escolhe o caminho mais curto, penalizando curvas. Trechos em comum com
-    // as linhas de outras subordinadas são permitidos. Retorna null quando
-    // não há caminho livre (caixa cercada).
-    function routeLayoutConnector(spec, boxes) {
-      const M = LAYOUT_ROUTE_MARGIN, S = LAYOUT_ROUTE_STUB, PAD = LAYOUT_ROUTE_AREA_PAD;
+    // as linhas de outras subordinadas são permitidos. Procura primeiro numa
+    // área pequena em volta da linha e só amplia se não achar caminho.
+    // Retorna null quando não há caminho livre (caixa cercada). Com
+    // allowCompute = false, só consulta o cache (undefined se não estiver lá).
+    function routeLayoutConnector(spec, boxes, allowCompute = true) {
+      const S = LAYOUT_ROUTE_STUB;
+      const s1 = [spec.start.x + spec.start.dir[0] * S, spec.start.y + spec.start.dir[1] * S];
+      const e1 = [spec.end.x - spec.end.dir[0] * S, spec.end.y - spec.end.dir[1] * S];
+      const near = pad => {
+        const minX = Math.min(s1[0], e1[0]) - pad, maxX = Math.max(s1[0], e1[0]) + pad;
+        const minY = Math.min(s1[1], e1[1]) - pad, maxY = Math.max(s1[1], e1[1]) + pad;
+        return { minX, maxX, minY, maxY, boxes: boxes.filter(b => b.x < maxX && b.x + b.w > minX && b.y < maxY && b.y + b.h > minY) };
+      };
+      const wide = near(LAYOUT_ROUTE_AREA_PAD);
+      const key = JSON.stringify([spec.start, spec.end, wide.boxes.map(b => [b.x, b.y, b.w, b.h])]);
+      if (layoutRouteCache.has(key)) return layoutRouteCache.get(key);
+      if (!allowCompute) return undefined;
+
+      const narrow = near(LAYOUT_ROUTE_AREA_PAD / 3);
+      const result = routeLayoutConnectorInArea(spec, s1, e1, narrow) || routeLayoutConnectorInArea(spec, s1, e1, wide);
+      if (layoutRouteCache.size > LAYOUT_ROUTE_CACHE_LIMIT) layoutRouteCache.clear();
+      layoutRouteCache.set(key, result);
+      return result;
+    }
+
+    function routeLayoutConnectorInArea(spec, s1, e1, area) {
+      const M = LAYOUT_ROUTE_MARGIN;
       const s0 = spec.start, e0 = spec.end;
-      const s1 = [s0.x + s0.dir[0] * S, s0.y + s0.dir[1] * S];
-      const e1 = [e0.x - e0.dir[0] * S, e0.y - e0.dir[1] * S];
-      const minX = Math.min(s1[0], e1[0]) - PAD, maxX = Math.max(s1[0], e1[0]) + PAD;
-      const minY = Math.min(s1[1], e1[1]) - PAD, maxY = Math.max(s1[1], e1[1]) + PAD;
       const strictlyInside = (x, y, o) => x > o.l && x < o.r && y > o.t && y < o.b;
-      const obstacles = boxes
-        .filter(b => b.x < maxX && b.x + b.w > minX && b.y < maxY && b.y + b.h > minY)
-        .map(b => {
-          // Se a saída ou a chegada já estão dentro da folga de uma caixa, só
-          // a folga dela é ignorada; a caixa em si continua bloqueando.
-          const o = { l: b.x - M, r: b.x + b.w + M, t: b.y - M, b: b.y + b.h + M };
-          if (!strictlyInside(s1[0], s1[1], o) && !strictlyInside(e1[0], e1[1], o)) return o;
-          return { l: b.x, r: b.x + b.w, t: b.y, b: b.y + b.h };
-        });
+      const obstacles = area.boxes.map(b => {
+        // Se a saída ou a chegada já estão dentro da folga de uma caixa, só
+        // a folga dela é ignorada; a caixa em si continua bloqueando.
+        const o = { l: b.x - M, r: b.x + b.w + M, t: b.y - M, b: b.y + b.h + M };
+        if (!strictlyInside(s1[0], s1[1], o) && !strictlyInside(e1[0], e1[1], o)) return o;
+        return { l: b.x, r: b.x + b.w, t: b.y, b: b.y + b.h };
+      });
 
       const uniq = arr => Array.from(new Set(arr)).sort((a, b) => a - b);
-      const xs = uniq([s1[0], e1[0], minX, maxX, ...obstacles.flatMap(o => [o.l, o.r])]);
-      const ys = uniq([s1[1], e1[1], minY, maxY, ...obstacles.flatMap(o => [o.t, o.b])]);
+      const xs = uniq([s1[0], e1[0], area.minX, area.maxX, ...obstacles.flatMap(o => [o.l, o.r])]);
+      const ys = uniq([s1[1], e1[1], area.minY, area.maxY, ...obstacles.flatMap(o => [o.t, o.b])]);
       const nx = xs.length, ny = ys.length;
-      const si = xs.indexOf(s1[0]), sj = ys.indexOf(s1[1]);
-      const ei = xs.indexOf(e1[0]), ej = ys.indexOf(e1[1]);
+      const xIndex = new Map(xs.map((v, i) => [v, i]));
+      const yIndex = new Map(ys.map((v, i) => [v, i]));
+      const si = xIndex.get(s1[0]), sj = yIndex.get(s1[1]);
+      const ei = xIndex.get(e1[0]), ej = yIndex.get(e1[1]);
 
-      const blockedPoint = (i, j) => obstacles.some(o => strictlyInside(xs[i], ys[j], o));
-      const blockedSeg = (ax, ay, bx, by) => obstacles.some(o => (
-        ay === by
-          ? ay > o.t && ay < o.b && Math.max(Math.min(ax, bx), o.l) < Math.min(Math.max(ax, bx), o.r)
-          : ax > o.l && ax < o.r && Math.max(Math.min(ay, by), o.t) < Math.min(Math.max(ay, by), o.b)
-      ));
+      // Grade de bloqueios, marcada uma vez por caixa. Como as bordas das
+      // caixas são linhas da grade, um trecho entre dois pontos vizinhos
+      // está bloqueado exatamente quando fica dentro de uma caixa.
+      const cell = (i, j) => i * ny + j;
+      const pointBlocked = new Uint8Array(nx * ny);
+      const hBlocked = new Uint8Array(nx * ny); // trecho (i,j) → (i+1,j)
+      const vBlocked = new Uint8Array(nx * ny); // trecho (i,j) → (i,j+1)
+      obstacles.forEach(o => {
+        const il = xIndex.get(o.l), ir = xIndex.get(o.r), jt = yIndex.get(o.t), jb = yIndex.get(o.b);
+        for (let i = il; i <= ir; i++) {
+          for (let j = jt; j <= jb; j++) {
+            const insideX = i > il && i < ir, insideY = j > jt && j < jb;
+            if (insideX && insideY) pointBlocked[cell(i, j)] = 1;
+            if (insideY && i < ir) hBlocked[cell(i, j)] = 1;
+            if (insideX && j < jb) vBlocked[cell(i, j)] = 1;
+          }
+        }
+      });
 
       // Direções: 0 direita, 1 esquerda, 2 baixo, 3 cima.
       const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
       const dirIndex = d => DIRS.findIndex(v => v[0] === Math.sign(d[0]) && v[1] === Math.sign(d[1]));
       const startDir = dirIndex(s0.dir), endDir = dirIndex(e0.dir);
-      const stateId = (i, j, d) => (i * ny + j) * 4 + d;
+      const stepBlocked = (i, j, nd) => (
+        nd === 0 ? hBlocked[cell(i, j)]
+          : nd === 1 ? hBlocked[cell(i - 1, j)]
+            : nd === 2 ? vBlocked[cell(i, j)]
+              : vBlocked[cell(i, j - 1)]
+      );
+      const stateId = (i, j, d) => cell(i, j) * 4 + d;
       const dist = new Float64Array(nx * ny * 4).fill(Infinity);
       const prev = new Int32Array(nx * ny * 4).fill(-1);
 
@@ -3991,7 +4038,7 @@
       while (heap.length) {
         const [cost, id] = pop();
         if (cost > dist[id] || cost >= goalCost) continue;
-        const d = id % 4, cell = (id - d) / 4, j = cell % ny, i = (cell - j) / ny;
+        const d = id % 4, c = (id - d) / 4, j = c % ny, i = (c - j) / ny;
         if (i === ei && j === ej) {
           const total = cost + (d === endDir ? 0 : LAYOUT_ROUTE_BEND_COST);
           if (total < goalCost) { goalCost = total; goalId = id; }
@@ -4001,7 +4048,7 @@
           if ((d ^ 1) === nd) continue; // sem meia-volta
           const ni = i + DIRS[nd][0], nj = j + DIRS[nd][1];
           if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
-          if (blockedPoint(ni, nj) || blockedSeg(xs[i], ys[j], xs[ni], ys[nj])) continue;
+          if (pointBlocked[cell(ni, nj)] || stepBlocked(i, j, nd)) continue;
           const step = Math.abs(xs[ni] - xs[i]) + Math.abs(ys[nj] - ys[j]) + (nd === d ? 0 : LAYOUT_ROUTE_BEND_COST);
           const nid = stateId(ni, nj, nd);
           if (cost + step < dist[nid]) {
@@ -4015,7 +4062,7 @@
 
       const cells = [];
       for (let id = goalId; id >= 0; id = prev[id]) {
-        const cell = (id - (id % 4)) / 4, j = cell % ny, i = (cell - j) / ny;
+        const c = (id - (id % 4)) / 4, j = c % ny, i = (c - j) / ny;
         cells.unshift([xs[i], ys[j]]);
       }
       const raw = [[s0.x, s0.y], ...cells, [e0.x, e0.y]];
@@ -4034,13 +4081,17 @@
     // Todos os conectores do desenho atual: trajeto padrão quando ele não
     // passa por trás de nenhuma caixa; senão, o desvio. Sem caminho livre, o
     // trajeto padrão é mantido e marcado (blocked) para ser desenhado como
-    // aviso.
-    function computeLayoutConnectors() {
+    // aviso. Com budgetMs, os desvios que não couberem nesse tempo ficam
+    // pendentes (desenhados pelo trajeto padrão por enquanto) e o resultado
+    // traz pending = true, para a tela completar nos quadros seguintes.
+    function computeLayoutConnectors(budgetMs = Infinity) {
+      const deadline = performance.now() + budgetMs;
       const staffBottoms = computeStaffSubtreeBottoms();
       const boxes = layoutNodesFlat.map(n => ({ id: n.id, ...getLayoutPosition(n) }));
       const boxById = {};
       boxes.forEach(b => { boxById[b.id] = b; });
       const result = [];
+      result.pending = false;
       layoutNodesFlat.forEach(n => {
         const parent = n.parentId ? layoutNodesById[n.parentId] : null;
         if (!parent) return;
@@ -4049,8 +4100,9 @@
         let points = spec.points;
         let blocked = false;
         if (layoutPathHitsBoxes(points, others)) {
-          const routed = routeLayoutConnector(spec, others);
-          if (routed) points = routed;
+          const routed = routeLayoutConnector(spec, others, performance.now() <= deadline);
+          if (routed === undefined) result.pending = true;
+          else if (routed) points = routed;
           else blocked = true;
         }
         result.push({ points, blocked });
@@ -4068,9 +4120,16 @@
       svg.setAttribute('width', width);
       svg.setAttribute('height', height);
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-      svg.innerHTML = computeLayoutConnectors()
+      const connectors = computeLayoutConnectors(LAYOUT_ROUTE_FRAME_BUDGET_MS);
+      svg.innerHTML = connectors
         .map(c => `<path${c.blocked ? ' class="connector-blocked"' : ''} d="${layoutConnectorPathD(c.points, originX, originY)}"/>`)
         .join('');
+      // Desvios que não couberam neste quadro: completa no próximo (os já
+      // calculados vêm do cache, então cada quadro avança um pouco).
+      clearTimeout(layoutConnectorsRetryTimer);
+      if (connectors.pending) {
+        layoutConnectorsRetryTimer = setTimeout(() => drawLayoutConnectors(originX, originY, width, height), 16);
+      }
     }
 
     // O arraste é travado no eixo (horizontal OU vertical) definido pelo
