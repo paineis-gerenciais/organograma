@@ -4213,6 +4213,9 @@
       const STAFF_TOP_GAP = 20;  // espaço entre o pai e a 1ª fileira de assessorias
       const STAFF_SPINE_GAP = 22;// distância da assessoria até a linha central
       const STAFF_ROW_GAP = 14;  // espaço entre fileiras de assessorias
+      const COLUMN_INDENT = 26;  // da espinha até a borda das caixas da coluna
+      const COLUMN_TOP_GAP = 14; // do pai (ou das assessorias) até o 1º item
+      const COLUMN_GAP = 16;     // entre itens da coluna
 
       const byId = {};
       layoutNodesFlat.forEach(n => { byId[n.id] = n; });
@@ -4237,12 +4240,18 @@
         positions[node.id] = { x: -node.w / 2, y: 0 };
         let left = node.w / 2, right = node.w / 2, height = node.h;
 
+        // Subordinadas de linha em coluna (escolha da tela "Ajustar Layout"
+        // ou do modo de camadas finais): a espinha sai do canto esquerdo do
+        // pai, então as assessorias dele ficam todas à direita.
+        const asColumn = lineChildren.some(c => c.inColumn);
+
         // Assessorias: fileiras abaixo do pai, 1ª à direita, 2ª à esquerda...
         let rowY = node.h + STAFF_TOP_GAP;
-        for (let i = 0; i < staffChildren.length; i += 2) {
+        const staffStep = asColumn ? 1 : 2;
+        for (let i = 0; i < staffChildren.length; i += staffStep) {
           const pair = [
             { sub: layoutSubtree(staffChildren[i].id), side: 'right' },
-            staffChildren[i + 1] ? { sub: layoutSubtree(staffChildren[i + 1].id), side: 'left' } : null
+            !asColumn && staffChildren[i + 1] ? { sub: layoutSubtree(staffChildren[i + 1].id), side: 'left' } : null
           ].filter(Boolean);
           let rowHeight = 0;
           pair.forEach(({ sub, side }) => {
@@ -4259,9 +4268,27 @@
           rowY += rowHeight + STAFF_ROW_GAP;
         }
 
+        // Filhas de linha em coluna: uma abaixo da outra, com a borda
+        // esquerda recuada em relação à espinha (como na tela principal).
+        if (lineChildren.length && asColumn) {
+          const colLeft = -node.w / 2 + LAYOUT_COLUMN_SPINE_INSET + COLUMN_INDENT;
+          let childY = height + COLUMN_TOP_GAP;
+          lineChildren.forEach((c, i) => {
+            const sub = layoutSubtree(c.id);
+            const axis = colLeft + sub.left;
+            Object.entries(sub.positions).forEach(([id, pos]) => {
+              positions[id] = { x: pos.x + axis, y: pos.y + childY };
+            });
+            left = Math.max(left, -(axis - sub.left));
+            right = Math.max(right, axis + sub.right);
+            childY += sub.height + (i < lineChildren.length - 1 ? COLUMN_GAP : 0);
+          });
+          height = childY;
+        }
+
         // Filhas de linha: lado a lado, abaixo de tudo o que já foi posto,
         // com o conjunto centralizado na linha central do pai.
-        if (lineChildren.length) {
+        if (lineChildren.length && !asColumn) {
           const subs = lineChildren.map(c => layoutSubtree(c.id));
           const total = subs.reduce((sum, sub, i) => sum + sub.left + sub.right + (i > 0 ? GAP_X : 0), 0);
           const childY = height + GAP_Y;

@@ -112,6 +112,9 @@ Firestore como banco de dados na nuvem.
     oculta) aparece no lugar relativo à sua unidade superior, como na
     árvore, mesmo que fique por cima de outra caixa. Uma unidade que mudou
     de superior também é reposicionada em relação à nova superior.
+  - **Otimizar respeita as colunas**: unidades com as subordinadas em coluna
+    continuam em coluna depois de otimizar (espinha à esquerda e
+    assessorias todas à direita, como na tela principal).
   > Importante: esse ajuste de posição vale só dentro da própria tela
   > "Ajustar Layout" — a tela principal do organograma continua usando o
   > layout automático de árvore (hierárquico), e os modos de impressão
