@@ -49,10 +49,15 @@ Firestore como banco de dados na nuvem.
   card) e navegar para dentro/fora de uma pasta.
 - **Botão de excluir nas unidades padrão**: agora aparece ao lado do "+" ao
   passar o mouse, igual já acontecia nas unidades de assessoria.
-- **Última camada em coluna (opcional)**: um botão na barra lateral esquerda
-  (logo abaixo dos controles de "Camadas") alterna a última fileira de cada
-  ramo entre a fileira horizontal padrão e uma coluna vertical — útil quando
-  o último nível tem muitos itens.
+- **Camadas finais em coluna (opcional)**: um botão na barra lateral esquerda
+  (logo abaixo dos controles de "Camadas") alterna entre três modos: tudo em
+  linha (padrão), **última camada em coluna** (a última fileira de cada ramo
+  vira uma coluna vertical) e **as 2 últimas camadas em coluna** (a
+  penúltima fileira vira coluna, e cada unidade dela leva as próprias
+  subordinadas em coluna logo abaixo, recuadas, como uma lista em árvore).
+  Útil quando os últimos níveis têm muitos itens. Unidades com assessoria
+  não entram na coluna da penúltima camada, para a assessoria não ficar por
+  cima da linha.
 - **Botões de impressão reorganizados e renomeados**:
   - **Gerar PDF** (antigo "Imprimir / PDF") agora pergunta o que você quer
     gerar: **Organograma** (página única, sob medida para o tamanho do
@@ -88,6 +93,28 @@ Firestore como banco de dados na nuvem.
   Tem botões de **Desfazer**, **Refazer** e **Resetar posições** (volta tudo
   para a posição original calculada pela árvore). As posições ajustadas
   ficam salvas com o organograma.
+  - **Linha sempre visível**: quando o trajeto normal de uma linha passaria
+    por trás de outra caixa, ela desvia pelo espaço livre, sempre em ângulo
+    reto. Linhas de unidades irmãs podem dividir um trecho. Se a caixa
+    estiver totalmente cercada (sem espaço para passar), a linha segue o
+    trajeto normal em tracejado âmbar, como aviso.
+  - **Linha ou coluna, unidade a unidade**: as caixas da penúltima camada (e
+    da anterior a ela) têm um botão redondo no canto inferior direito que
+    alterna as subordinadas daquela unidade entre linha e coluna. Na
+    unidade acima da penúltima camada, a coluna leva junto a última camada
+    (as 2 últimas em coluna). Ao abrir a tela, cada unidade começa como
+    está na tela principal; depois do primeiro ajuste, vale a escolha feita
+    aqui.
+  - **Ajustes preservados**: as posições são guardadas como uma "foto" do
+    desenho, junto com a unidade superior de cada caixa. Sair e voltar,
+    recarregar a página ou editar o organograma na tela principal não move
+    as caixas já posicionadas. Uma unidade nova (ou de uma camada que estava
+    oculta) aparece no lugar relativo à sua unidade superior, como na
+    árvore, mesmo que fique por cima de outra caixa. Uma unidade que mudou
+    de superior também é reposicionada em relação à nova superior.
+  - **Otimizar respeita as colunas**: unidades com as subordinadas em coluna
+    continuam em coluna depois de otimizar (espinha à esquerda e
+    assessorias todas à direita, como na tela principal).
   > Importante: esse ajuste de posição vale só dentro da própria tela
   > "Ajustar Layout" — a tela principal do organograma continua usando o
   > layout automático de árvore (hierárquico), e os modos de impressão
