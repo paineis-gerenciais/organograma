@@ -166,6 +166,34 @@
       stroke: #94a3b8;
       stroke-width: 2;
     }
+    /* Linha sem caminho livre (a caixa está cercada): desenhada pelo trajeto
+       padrão, em tracejado âmbar, como aviso. */
+    #layout-canvas-connectors path.connector-blocked {
+      stroke: #f59e0b;
+      stroke-dasharray: 6 4;
+    }
+    /* Botão de orientação das subordinadas (linha × coluna) nas caixas da
+       penúltima camada e da anterior a ela. */
+    #layout-canvas .layout-orient-btn {
+      position: absolute;
+      right: -10px;
+      bottom: -10px;
+      width: 22px;
+      height: 22px;
+      border-radius: 9999px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #64748b;
+      font-size: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      box-shadow: 0 1px 3px rgba(15, 23, 42, .15);
+      z-index: 3;
+    }
+    #layout-canvas .layout-orient-btn:hover { color: #4338ca; border-color: #818cf8; }
+    #layout-canvas .layout-orient-btn.is-vertical { background: #e0e7ff; color: #4338ca; border-color: #a5b4fc; }
 
     /* Última camada em modo vertical.
        - A espinha das unidades de linha sai do canto inferior esquerdo do pai
@@ -226,6 +254,15 @@
     .org-tree ul.vertical-layer > li > .node-wrapper > .node-card {
       width: 184px;
     }
+    /* Duas últimas camadas em coluna: um item da coluna que tem as próprias
+       subordinadas em coluna fica alinhado à esquerda, e a espinha dele sai
+       14px para dentro da borda esquerda (como na coluna de fora). */
+    .org-tree ul.vertical-layer > li > .node-wrapper.vl-parent {
+      min-width: 0;
+      align-items: flex-start;
+    }
+    .org-tree ul.vertical-layer > li > .node-wrapper.vl-parent::after { left: 14px; top: 0; }
+    .org-tree ul.vertical-layer > li > ul.vertical-layer { margin-left: 14px; }
     .org-tree ul.vertical-layer > li > .node-wrapper::before {
       content: '';
       position: absolute;
@@ -951,7 +988,7 @@
         <div class="h-6 w-px bg-slate-300 shrink-0"></div>
         <div class="min-w-0">
           <h1 class="font-bold text-slate-800 text-base leading-tight">Ajustar Layout</h1>
-          <p class="text-[11px] text-slate-500 truncate">Arraste as caixas para reposicioná-las. A estrutura e os vínculos não podem ser alterados aqui.</p>
+          <p class="text-[11px] text-slate-500 truncate">Arraste as caixas para reposicioná-las. O botão redondo no canto de uma caixa alterna as subordinadas dela entre linha e coluna.</p>
         </div>
       </div>
       <div class="flex items-center gap-2 shrink-0">
@@ -984,7 +1021,6 @@
             <button id="layout-layer-counter" type="button" onclick="toggleAllLayersInLayoutView()" class="min-w-7 px-1 h-6 rounded text-[9px] font-bold text-indigo-700 hover:bg-indigo-50 hover:text-indigo-800 transition-colors cursor-pointer" title="Clique para expandir tudo ou recolher tudo">Todos</button>
             <button onclick="changeLayerInLayoutView(-1)" class="w-7 h-7 rounded hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors" title="Recolher: ocultar um nível"><i class="fa-solid fa-minus text-[10px]"></i></button>
           </div>
-          <button id="layout-last-layer-btn" onclick="toggleLastLayerOrientation()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Última camada: horizontal (clique para deixar vertical)"><i class="fa-solid fa-grip-lines text-xs"></i></button>
           <hr class="border-slate-200 mx-1">
           <button onclick="layoutZoomIn()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Aumentar Zoom"><i class="fa-solid fa-magnifying-glass-plus text-xs"></i></button>
           <button onclick="layoutZoomOut()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Diminuir Zoom"><i class="fa-solid fa-magnifying-glass-minus text-xs"></i></button>
@@ -1388,7 +1424,7 @@
             <button onclick="changeLayer(-1)" class="w-7 h-7 rounded hover:bg-slate-200 text-slate-600 flex items-center justify-center transition-colors" title="Recolher: ocultar um nível"><i class="fa-solid fa-minus text-[10px]"></i></button>
           </div>
 
-          <button id="last-layer-orientation-btn" onclick="toggleLastLayerOrientation()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Última camada: horizontal (clique para deixar vertical)">
+          <button id="last-layer-orientation-btn" onclick="toggleLastLayerOrientation()" class="w-8 h-8 rounded-lg mx-auto hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-colors" title="Camadas finais em linha (clique para deixar a última camada em coluna)">
             <i class="fa-solid fa-grip-lines"></i>
           </button>
 
@@ -1936,10 +1972,17 @@
     let isDraggingCanvas = false;
     let startX = 0, startY = 0;
     let globalMaxLayer = 99;
-    // Quando true, a última fileira visível de cada ramo (unidades sem
-    // filhas visíveis) é desenhada em coluna vertical, em vez da fileira
-    // horizontal padrão — útil quando o último nível tem muitos itens.
-    let lastLayerVertical = false;
+    // Camadas finais em coluna, em vez da fileira horizontal padrão — útil
+    // quando os últimos níveis têm muitos itens:
+    // 0 = tudo em linha; 1 = a última fileira visível de cada ramo (unidades
+    // sem filhas visíveis) em coluna; 2 = as duas últimas em coluna (a
+    // penúltima em coluna, cada item com as próprias subordinadas em coluna
+    // logo abaixo, recuadas).
+    let lastLayerMode = 0;
+    // Orientação escolhida unidade a unidade na tela "Ajustar Layout"
+    // ({ id: 'h' | 'v' }). Só vale enquanto o desenho é montado para aquela
+    // tela; na tela principal fica null e vale o lastLayerMode.
+    let layoutOrientationOverrides = null;
 
     // Estado da seleção geométrica usada pelo recurso “Imprimir recorte”.
     let cropSelectionActive = false;
@@ -3295,7 +3338,7 @@
       selectedNodeId = null;
       collapsedNodes.clear();
       globalMaxLayer = 99;
-      lastLayerVertical = !!chartsData[id].lastLayerVertical;
+      lastLayerMode = getChartLastLayerMode(chartsData[id]);
       syncLastLayerButtons();
       resetHistory();
       // A busca de um organograma não deve continuar ativa ao abrir outro.
@@ -3434,49 +3477,102 @@
       if (currentChartId) duplicateChart(currentChartId, true);
     }
 
-    /* --- AJUSTAR LAYOUT (posições manuais, sem alterar estrutura/vínculos) --- */
+    /* --- AJUSTAR LAYOUT (posições manuais, sem alterar estrutura/vínculos) ---
+       As posições salvas (layoutOverrides) são uma "foto" do desenho: cada
+       caixa guarda onde está ({ x, y }) e quem era a superior dela (p) nesse
+       momento. Assim, mudanças na tela principal não mexem nas caixas já
+       ajustadas. Uma caixa sem posição salva (unidade nova, camada que
+       estava oculta) ou cuja superior mudou é posta em relação à superior,
+       no mesmo lugar relativo que ela tem na árvore — mesmo que fique por
+       cima de outra caixa. Posições antigas, sem o campo p, continuam
+       valendo como estão. */
     let layoutOverridesDraft = {};
+    let layoutOrientationDraft = {};
     let layoutHistory = [];
     let layoutHistoryIndex = -1;
     let layoutNodesFlat = [];
+    let layoutNodesById = {};
 
-    // Lê a posição NATURAL (calculada pela árvore de verdade, na tela
-    // principal) de cada cartão, mais nome/sigla/tipo/pai — a base sobre a
-    // qual as posições manuais (layoutOverrides) são aplicadas.
+    function setLayoutNodes(flat) {
+      layoutNodesFlat = flat;
+      layoutNodesById = {};
+      flat.forEach(n => { layoutNodesById[n.id] = n; });
+    }
+
+    // Lê a posição NATURAL (calculada pela árvore de verdade) de cada cartão,
+    // mais nome/sigla/tipo/pai — a base sobre a qual as posições manuais são
+    // aplicadas. A árvore é montada com a orientação escolhida na tela
+    // "Ajustar Layout" (linha ou coluna, unidade a unidade), medida e, em
+    // seguida, a tela principal volta exatamente como estava.
     function buildLayoutFlatNodes() {
       const root = document.getElementById('tree-root');
       if (!root || !orgTree) return null;
-      const rootRect = root.getBoundingClientRect();
-      const z = zoomLevel || 1;
-      const cards = Array.from(root.querySelectorAll('.node-card'));
-      if (!cards.length) return null;
-      return cards.map(el => {
-        const r = el.getBoundingClientRect();
-        const id = el.id.replace(/^card-/, '');
-        const node = findNodeById(orgTree, id);
-        const parent = findParentNode(orgTree, id);
-        return {
-          id,
-          name: node?.name || 'Sem nome',
-          sigla: node?.sigla || '',
-          type: node?.type || 'linha',
-          parentId: parent ? parent.id : null,
-          x: (r.left - rootRect.left) / z,
-          y: (r.top - rootRect.top) / z,
-          w: r.width / z,
-          h: r.height / z
-        };
-      });
+      const previousMarkup = root.innerHTML;
+      layoutOrientationOverrides = layoutOrientationDraft;
+      try {
+        root.innerHTML = `<ul>${renderNodeHtml(orgTree, 1)}</ul>`;
+        const rootRect = root.getBoundingClientRect();
+        const z = zoomLevel || 1;
+        const cards = Array.from(root.querySelectorAll('.node-card'));
+        if (!cards.length) return null;
+        return cards.map(el => {
+          const r = el.getBoundingClientRect();
+          const id = el.id.replace(/^card-/, '');
+          const node = findNodeById(orgTree, id);
+          const parent = findParentNode(orgTree, id);
+          const ownList = el.parentElement?.parentElement?.parentElement;
+          return {
+            id,
+            name: node?.name || 'Sem nome',
+            sigla: node?.sigla || '',
+            type: node?.type || 'linha',
+            parentId: parent ? parent.id : null,
+            // Item de uma coluna: a linha chega pela lateral, vinda da espinha.
+            inColumn: !!(el.parentElement?.classList.contains('node-wrapper') && ownList?.classList.contains('vertical-layer')),
+            // 'h' ou 'v' quando a orientação das subordinadas pode ser escolhida.
+            orient: el.dataset.orient || null,
+            x: (r.left - rootRect.left) / z,
+            y: (r.top - rootRect.top) / z,
+            w: r.width / z,
+            h: r.height / z
+          };
+        });
+      } finally {
+        layoutOrientationOverrides = null;
+        root.innerHTML = previousMarkup;
+      }
     }
 
     function getLayoutPosition(node) {
-      const override = layoutOverridesDraft[node.id];
-      return {
-        x: override ? override.x : node.x,
-        y: override ? override.y : node.y,
-        w: node.w,
-        h: node.h
-      };
+      const saved = layoutOverridesDraft[node.id];
+      if (saved && (!('p' in saved) || saved.p === (node.parentId || null))) {
+        return { x: saved.x, y: saved.y, w: node.w, h: node.h };
+      }
+      const parent = node.parentId ? layoutNodesById[node.parentId] : null;
+      if (parent) {
+        const pp = getLayoutPosition(parent);
+        return { x: pp.x + node.x - parent.x, y: pp.y + node.y - parent.y, w: node.w, h: node.h };
+      }
+      return { x: node.x, y: node.y, w: node.w, h: node.h };
+    }
+
+    // Grava a posição atual de todas as caixas visíveis (e a orientação das
+    // que podem escolhê-la), para que nada mude de lugar quando a árvore for
+    // editada depois. Descarta posições de unidades que não existem mais.
+    function materializeLayout() {
+      const next = {};
+      Object.entries(layoutOverridesDraft).forEach(([id, pos]) => {
+        if (findNodeById(orgTree, id)) next[id] = pos;
+      });
+      layoutNodesFlat.forEach(n => {
+        const pos = getLayoutPosition(n);
+        next[n.id] = { x: pos.x, y: pos.y, p: n.parentId || null };
+        if (n.orient && !layoutOrientationDraft[n.id]) layoutOrientationDraft[n.id] = n.orient;
+      });
+      layoutOverridesDraft = next;
+      Object.keys(layoutOrientationDraft).forEach(id => {
+        if (!findNodeById(orgTree, id)) delete layoutOrientationDraft[id];
+      });
     }
 
     /* Pan/zoom próprios da tela "Ajustar Layout" — mesmo comportamento da
@@ -3559,17 +3655,36 @@
     function refreshLayoutFromTree() {
       const flat = buildLayoutFlatNodes();
       if (!flat) return;
-      layoutNodesFlat = flat;
+      setLayoutNodes(flat);
       renderLayoutCanvas();
+    }
+
+    // Alterna as subordinadas de uma unidade entre linha e coluna (só nesta
+    // tela). A unidade e o resto do desenho ficam onde estão; as subordinadas
+    // dela são postas de novo em relação a ela, na nova orientação. Numa
+    // unidade da antepenúltima camada, a coluna leva junto as subordinadas
+    // das subordinadas (as 2 últimas camadas).
+    function toggleLayoutOrientation(nodeId) {
+      const node = layoutNodesById[nodeId];
+      if (!node || !node.orient) return;
+      materializeLayout();
+      layoutOrientationDraft[nodeId] = node.orient === 'v' ? 'h' : 'v';
+      getSubtreeIds(nodeId).forEach(id => {
+        delete layoutOverridesDraft[id];
+        delete layoutOrientationDraft[id];
+      });
+      refreshLayoutFromTree();
+      commitLayoutChange();
     }
 
     function openLayoutAdjustScreen() {
       if (!currentChartId || !orgTree) { showToast('Abra um organograma primeiro.', 'error'); return; }
+      layoutOrientationDraft = { ...(chartsData[currentChartId].layoutOrientation || {}) };
+      layoutOverridesDraft = { ...(chartsData[currentChartId].layoutOverrides || {}) };
       const flat = buildLayoutFlatNodes();
       if (!flat) { showToast('Não foi possível medir o organograma.', 'error'); return; }
-      layoutNodesFlat = flat;
-      layoutOverridesDraft = { ...(chartsData[currentChartId].layoutOverrides || {}) };
-      layoutHistory = [{ ...layoutOverridesDraft }];
+      setLayoutNodes(flat);
+      layoutHistory = [snapshotLayoutState()];
       layoutHistoryIndex = 0;
       layoutZoomLevel = 1;
       layoutPanX = 0;
@@ -3612,6 +3727,19 @@
           <div class="unit-name font-bold text-slate-800 text-xs">${escapeHtml(n.name)}</div>
           ${n.sigla ? `<div class="mt-1 text-[9px] font-bold uppercase tracking-wide text-slate-500">${escapeHtml(n.sigla)}</div>` : ''}
         `;
+        if (n.orient) {
+          const vertical = n.orient === 'v';
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `layout-orient-btn${vertical ? ' is-vertical' : ''}`;
+          btn.title = vertical
+            ? 'Subordinadas em coluna (clique para deixar em linha)'
+            : 'Subordinadas em linha (clique para deixar em coluna)';
+          btn.innerHTML = `<i class="fa-solid ${vertical ? 'fa-grip-lines-vertical' : 'fa-grip-lines'}"></i>`;
+          btn.addEventListener('mousedown', (e) => e.stopPropagation());
+          btn.addEventListener('click', (e) => { e.stopPropagation(); toggleLayoutOrientation(n.id); });
+          el.appendChild(btn);
+        }
         el.addEventListener('mousedown', (e) => startLayoutDrag(e, n.id));
         canvas.appendChild(el);
       });
@@ -3661,24 +3789,17 @@
     // que chega até ela, e mover na horizontal só afeta o trecho horizontal;
     // um nunca mexe no outro.
     const LAYOUT_CONNECTOR_BEND_GAP = 24;
+    // Espinha de uma coluna: sai 14px para dentro da borda esquerda do pai,
+    // como na tela principal.
+    const LAYOUT_COLUMN_SPINE_INSET = 14;
+    // Desvio de caixas: folga mantida em volta de cada caixa, trecho reto
+    // obrigatório na saída e na chegada, e "custo" de cada curva (quanto
+    // maior, mais o trajeto prefere ser um pouco mais longo a ter mais curvas).
+    const LAYOUT_ROUTE_MARGIN = 10;
+    const LAYOUT_ROUTE_STUB = 12;
+    const LAYOUT_ROUTE_BEND_COST = 40;
+    const LAYOUT_ROUTE_AREA_PAD = 320;
 
-    // Calcula o caminho SVG do conector entre pai e filho. Unidades do tipo
-    // assessoria são ligadas pela lateral (esquerda ou direita, conforme o
-    // lado em que estão em relação ao centro da caixa superior — recalculado
-    // a cada arraste); as demais mantêm o conector padrão de cima para baixo.
-    // Em ambos os casos, a "dobra" fica a uma distância fixa da caixa de
-    // cima, para que mover na horizontal só afete o trecho horizontal e
-    // mover na vertical só afete o trecho vertical.
-    // Calcula o caminho SVG do conector entre pai e filho.
-    // - Assessoria com pai do tipo "linha" (caixa padrão): a linha sai por
-    //   baixo do pai (como o conector padrão), desce um pouco e só depois
-    //   vira para entrar na lateral da assessoria — igual à tela principal.
-    // - Assessoria com pai também assessoria: continua ligada lateral a
-    //   lateral (os dois são do mesmo "galho").
-    // - Demais casos: conector padrão de cima para baixo.
-    // Em todos os casos, a "dobra" fica a uma distância fixa da caixa de
-    // cima, para que mover na horizontal só afete o trecho horizontal e
-    // mover na vertical só afete o trecho vertical.
     // Para cada caixa, a base mais baixa de toda a sua subárvore de
     // assessoria (assessorias diretas e as subordinadas delas). Usado para
     // que a linha até as filhas de linha só faça a curva de 90° depois de
@@ -3702,43 +3823,243 @@
       return result;
     }
 
-    function buildLayoutConnectorPath(p, c, childType, parentType, originX, originY, staffBottom) {
-      if (childType === 'assessoria') {
-        const childCenterX = c.x - originX + c.w / 2;
-        const childCenterY = c.y - originY + c.h / 2;
+    // Trajeto padrão do conector entre pai e filho (lista de pontos), mais a
+    // porta de saída e a de chegada com a direção de cada uma — usadas pelo
+    // desvio de caixas quando o trajeto padrão passa por trás de alguma.
+    // - Assessoria com pai do tipo "linha": a linha sai por baixo do pai,
+    //   desce pela linha central até a altura da assessoria e vira para
+    //   entrar na lateral dela — igual à tela principal.
+    // - Assessoria com pai também assessoria: lateral a lateral.
+    // - Item de uma coluna: espinha que desce do canto inferior esquerdo do
+    //   pai e entra pela lateral do item.
+    // - Demais casos: de cima para baixo, com a dobra a uma distância fixa
+    //   da caixa de cima (ou logo abaixo das assessorias do pai).
+    function buildLayoutConnectorSpec(parentNode, childNode, p, c, staffBottom) {
+      const childCenterX = c.x + c.w / 2;
+      const childCenterY = c.y + c.h / 2;
+      const parentCenterX = p.x + p.w / 2;
+      const parentBottomY = p.y + p.h;
 
-        if (parentType !== 'assessoria') {
-          // A dobra fica na própria altura da assessoria (não numa distância
-          // fixa do pai): mover a caixa na vertical desloca onde, ao longo
-          // da linha central que desce do pai, o galho horizontal sai; mover
-          // na horizontal só estica/encolhe esse galho.
-          const parentCenterX = p.x - originX + p.w / 2;
-          const parentBottomY = p.y - originY + p.h;
-          const side = childCenterX < parentCenterX ? 'left' : 'right';
-          const childEdgeX = side === 'left' ? (c.x - originX + c.w) : (c.x - originX);
-          return `M ${parentCenterX} ${parentBottomY} L ${parentCenterX} ${childCenterY} L ${childEdgeX} ${childCenterY}`;
-        }
-
-        const parentCenterX = p.x - originX + p.w / 2;
-        const parentCenterY = p.y - originY + p.h / 2;
+      if (childNode.type === 'assessoria') {
         const side = childCenterX < parentCenterX ? 'left' : 'right';
-        const parentEdgeX = side === 'left' ? (p.x - originX) : (p.x - originX + p.w);
-        const childEdgeX = side === 'left' ? (c.x - originX + c.w) : (c.x - originX);
+        const childEdgeX = side === 'left' ? c.x + c.w : c.x;
+        const endDir = side === 'left' ? [-1, 0] : [1, 0];
+        if (parentNode.type !== 'assessoria') {
+          return {
+            points: [[parentCenterX, parentBottomY], [parentCenterX, childCenterY], [childEdgeX, childCenterY]],
+            start: { x: parentCenterX, y: parentBottomY, dir: [0, 1] },
+            end: { x: childEdgeX, y: childCenterY, dir: endDir }
+          };
+        }
+        const parentCenterY = p.y + p.h / 2;
+        const parentEdgeX = side === 'left' ? p.x : p.x + p.w;
         const bendX = side === 'left' ? parentEdgeX - LAYOUT_CONNECTOR_BEND_GAP : parentEdgeX + LAYOUT_CONNECTOR_BEND_GAP;
-        return `M ${parentEdgeX} ${parentCenterY} L ${bendX} ${parentCenterY} L ${bendX} ${childCenterY} L ${childEdgeX} ${childCenterY}`;
+        return {
+          points: [[parentEdgeX, parentCenterY], [bendX, parentCenterY], [bendX, childCenterY], [childEdgeX, childCenterY]],
+          start: { x: parentEdgeX, y: parentCenterY, dir: endDir },
+          end: { x: childEdgeX, y: childCenterY, dir: endDir }
+        };
       }
-      const x1 = p.x - originX + p.w / 2;
-      const y1 = p.y - originY + p.h;
-      const x2 = c.x - originX + c.w / 2;
-      const y2 = c.y - originY;
+
+      if (childNode.inColumn) {
+        const spineX = p.x + LAYOUT_COLUMN_SPINE_INSET;
+        const fromLeft = childCenterX >= spineX;
+        const childEdgeX = fromLeft ? c.x : c.x + c.w;
+        return {
+          points: [[spineX, parentBottomY], [spineX, childCenterY], [childEdgeX, childCenterY]],
+          start: { x: spineX, y: parentBottomY, dir: [0, 1] },
+          end: { x: childEdgeX, y: childCenterY, dir: fromLeft ? [1, 0] : [-1, 0] }
+        };
+      }
+
+      const x1 = parentCenterX;
+      const y1 = parentBottomY;
+      const x2 = childCenterX;
+      const y2 = c.y;
       let bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
       if (staffBottom !== undefined) {
-        const belowStaff = staffBottom - originY + LAYOUT_CONNECTOR_BEND_GAP;
+        const belowStaff = staffBottom + LAYOUT_CONNECTOR_BEND_GAP;
         // Só desce abaixo das assessorias se a filha ainda estiver mais
         // abaixo; se ela foi arrastada para cima delas, volta ao padrão.
         if (belowStaff < y2) bendY = Math.max(bendY, belowStaff);
       }
-      return `M ${x1} ${y1} L ${x1} ${bendY} L ${x2} ${bendY} L ${x2} ${y2}`;
+      return {
+        points: [[x1, y1], [x1, bendY], [x2, bendY], [x2, y2]],
+        start: { x: x1, y: y1, dir: [0, 1] },
+        end: { x: x2, y: y2, dir: [0, 1] }
+      };
+    }
+
+    // Um segmento reto (horizontal ou vertical) passa por dentro da caixa?
+    // Encostar na borda não conta.
+    function layoutSegmentHitsBox(ax, ay, bx, by, box) {
+      const l = box.x + 1, r = box.x + box.w - 1, t = box.y + 1, b = box.y + box.h - 1;
+      return Math.max(Math.min(ax, bx), l) < Math.min(Math.max(ax, bx), r)
+        && Math.max(Math.min(ay, by), t) < Math.min(Math.max(ay, by), b)
+        || (ax === bx && ax > l && ax < r && Math.min(ay, by) < b && Math.max(ay, by) > t)
+        || (ay === by && ay > t && ay < b && Math.min(ax, bx) < r && Math.max(ax, bx) > l);
+    }
+
+    function layoutPathHitsBoxes(points, boxes) {
+      for (let i = 1; i < points.length; i++) {
+        const [ax, ay] = points[i - 1], [bx, by] = points[i];
+        if (boxes.some(box => layoutSegmentHitsBox(ax, ay, bx, by, box))) return true;
+      }
+      return false;
+    }
+
+    // Procura um trajeto em ângulo reto que não passe por trás de nenhuma
+    // caixa: monta uma grade com as bordas (com folga) das caixas próximas e
+    // escolhe o caminho mais curto, penalizando curvas. Trechos em comum com
+    // as linhas de outras subordinadas são permitidos. Retorna null quando
+    // não há caminho livre (caixa cercada).
+    function routeLayoutConnector(spec, boxes) {
+      const M = LAYOUT_ROUTE_MARGIN, S = LAYOUT_ROUTE_STUB, PAD = LAYOUT_ROUTE_AREA_PAD;
+      const s0 = spec.start, e0 = spec.end;
+      const s1 = [s0.x + s0.dir[0] * S, s0.y + s0.dir[1] * S];
+      const e1 = [e0.x - e0.dir[0] * S, e0.y - e0.dir[1] * S];
+      const minX = Math.min(s1[0], e1[0]) - PAD, maxX = Math.max(s1[0], e1[0]) + PAD;
+      const minY = Math.min(s1[1], e1[1]) - PAD, maxY = Math.max(s1[1], e1[1]) + PAD;
+      const strictlyInside = (x, y, o) => x > o.l && x < o.r && y > o.t && y < o.b;
+      const obstacles = boxes
+        .filter(b => b.x < maxX && b.x + b.w > minX && b.y < maxY && b.y + b.h > minY)
+        .map(b => {
+          // Se a saída ou a chegada já estão dentro da folga de uma caixa, só
+          // a folga dela é ignorada; a caixa em si continua bloqueando.
+          const o = { l: b.x - M, r: b.x + b.w + M, t: b.y - M, b: b.y + b.h + M };
+          if (!strictlyInside(s1[0], s1[1], o) && !strictlyInside(e1[0], e1[1], o)) return o;
+          return { l: b.x, r: b.x + b.w, t: b.y, b: b.y + b.h };
+        });
+
+      const uniq = arr => Array.from(new Set(arr)).sort((a, b) => a - b);
+      const xs = uniq([s1[0], e1[0], minX, maxX, ...obstacles.flatMap(o => [o.l, o.r])]);
+      const ys = uniq([s1[1], e1[1], minY, maxY, ...obstacles.flatMap(o => [o.t, o.b])]);
+      const nx = xs.length, ny = ys.length;
+      const si = xs.indexOf(s1[0]), sj = ys.indexOf(s1[1]);
+      const ei = xs.indexOf(e1[0]), ej = ys.indexOf(e1[1]);
+
+      const blockedPoint = (i, j) => obstacles.some(o => strictlyInside(xs[i], ys[j], o));
+      const blockedSeg = (ax, ay, bx, by) => obstacles.some(o => (
+        ay === by
+          ? ay > o.t && ay < o.b && Math.max(Math.min(ax, bx), o.l) < Math.min(Math.max(ax, bx), o.r)
+          : ax > o.l && ax < o.r && Math.max(Math.min(ay, by), o.t) < Math.min(Math.max(ay, by), o.b)
+      ));
+
+      // Direções: 0 direita, 1 esquerda, 2 baixo, 3 cima.
+      const DIRS = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+      const dirIndex = d => DIRS.findIndex(v => v[0] === Math.sign(d[0]) && v[1] === Math.sign(d[1]));
+      const startDir = dirIndex(s0.dir), endDir = dirIndex(e0.dir);
+      const stateId = (i, j, d) => (i * ny + j) * 4 + d;
+      const dist = new Float64Array(nx * ny * 4).fill(Infinity);
+      const prev = new Int32Array(nx * ny * 4).fill(-1);
+
+      // Fila de prioridade (heap binário) de [custo, estado].
+      const heap = [];
+      const push = (cost, id) => {
+        heap.push([cost, id]);
+        let k = heap.length - 1;
+        while (k > 0) {
+          const parentK = (k - 1) >> 1;
+          if (heap[parentK][0] <= heap[k][0]) break;
+          [heap[parentK], heap[k]] = [heap[k], heap[parentK]];
+          k = parentK;
+        }
+      };
+      const pop = () => {
+        const top = heap[0];
+        const last = heap.pop();
+        if (heap.length) {
+          heap[0] = last;
+          let k = 0;
+          for (;;) {
+            const l = 2 * k + 1, r = l + 1;
+            let m = k;
+            if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+            if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+            if (m === k) break;
+            [heap[m], heap[k]] = [heap[k], heap[m]];
+            k = m;
+          }
+        }
+        return top;
+      };
+
+      const startId = stateId(si, sj, startDir);
+      dist[startId] = 0;
+      push(0, startId);
+      let goalId = -1, goalCost = Infinity;
+      while (heap.length) {
+        const [cost, id] = pop();
+        if (cost > dist[id] || cost >= goalCost) continue;
+        const d = id % 4, cell = (id - d) / 4, j = cell % ny, i = (cell - j) / ny;
+        if (i === ei && j === ej) {
+          const total = cost + (d === endDir ? 0 : LAYOUT_ROUTE_BEND_COST);
+          if (total < goalCost) { goalCost = total; goalId = id; }
+          continue;
+        }
+        for (let nd = 0; nd < 4; nd++) {
+          if ((d ^ 1) === nd) continue; // sem meia-volta
+          const ni = i + DIRS[nd][0], nj = j + DIRS[nd][1];
+          if (ni < 0 || nj < 0 || ni >= nx || nj >= ny) continue;
+          if (blockedPoint(ni, nj) || blockedSeg(xs[i], ys[j], xs[ni], ys[nj])) continue;
+          const step = Math.abs(xs[ni] - xs[i]) + Math.abs(ys[nj] - ys[j]) + (nd === d ? 0 : LAYOUT_ROUTE_BEND_COST);
+          const nid = stateId(ni, nj, nd);
+          if (cost + step < dist[nid]) {
+            dist[nid] = cost + step;
+            prev[nid] = id;
+            push(cost + step, nid);
+          }
+        }
+      }
+      if (goalId < 0) return null;
+
+      const cells = [];
+      for (let id = goalId; id >= 0; id = prev[id]) {
+        const cell = (id - (id % 4)) / 4, j = cell % ny, i = (cell - j) / ny;
+        cells.unshift([xs[i], ys[j]]);
+      }
+      const raw = [[s0.x, s0.y], ...cells, [e0.x, e0.y]];
+      // Remove pontos repetidos e pontos no meio de um trecho reto.
+      const points = [];
+      raw.forEach(pt => {
+        const last = points[points.length - 1];
+        if (last && last[0] === pt[0] && last[1] === pt[1]) return;
+        const before = points[points.length - 2];
+        if (before && last && ((before[0] === last[0] && last[0] === pt[0]) || (before[1] === last[1] && last[1] === pt[1]))) points.pop();
+        points.push(pt);
+      });
+      return points;
+    }
+
+    // Todos os conectores do desenho atual: trajeto padrão quando ele não
+    // passa por trás de nenhuma caixa; senão, o desvio. Sem caminho livre, o
+    // trajeto padrão é mantido e marcado (blocked) para ser desenhado como
+    // aviso.
+    function computeLayoutConnectors() {
+      const staffBottoms = computeStaffSubtreeBottoms();
+      const boxes = layoutNodesFlat.map(n => ({ id: n.id, ...getLayoutPosition(n) }));
+      const boxById = {};
+      boxes.forEach(b => { boxById[b.id] = b; });
+      const result = [];
+      layoutNodesFlat.forEach(n => {
+        const parent = n.parentId ? layoutNodesById[n.parentId] : null;
+        if (!parent) return;
+        const spec = buildLayoutConnectorSpec(parent, n, boxById[parent.id], boxById[n.id], staffBottoms[parent.id]);
+        const others = boxes.filter(b => b.id !== n.id && b.id !== parent.id);
+        let points = spec.points;
+        let blocked = false;
+        if (layoutPathHitsBoxes(points, others)) {
+          const routed = routeLayoutConnector(spec, others);
+          if (routed) points = routed;
+          else blocked = true;
+        }
+        result.push({ points, blocked });
+      });
+      return result;
+    }
+
+    function layoutConnectorPathD(points, originX, originY) {
+      return points.map((pt, i) => `${i ? 'L' : 'M'} ${pt[0] - originX} ${pt[1] - originY}`).join(' ');
     }
 
     function drawLayoutConnectors(originX, originY, width, height) {
@@ -3747,20 +4068,9 @@
       svg.setAttribute('width', width);
       svg.setAttribute('height', height);
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-
-      const byId = {};
-      layoutNodesFlat.forEach(n => { byId[n.id] = n; });
-
-      const staffBottoms = computeStaffSubtreeBottoms();
-      let paths = '';
-      layoutNodesFlat.forEach(n => {
-        const parent = n.parentId ? byId[n.parentId] : null;
-        if (!parent) return;
-        const p = getLayoutPosition(parent);
-        const c = getLayoutPosition(n);
-        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY, staffBottoms[parent.id])}"/>`;
-      });
-      svg.innerHTML = paths;
+      svg.innerHTML = computeLayoutConnectors()
+        .map(c => `<path${c.blocked ? ' class="connector-blocked"' : ''} d="${layoutConnectorPathD(c.points, originX, originY)}"/>`)
+        .join('');
     }
 
     // O arraste é travado no eixo (horizontal OU vertical) definido pelo
@@ -3792,10 +4102,17 @@
       // a posição relativa entre elas. Só a linha até a hierarquia superior
       // muda de forma; as linhas dentro da própria subárvore só se deslocam.
       const subtreeIds = getSubtreeIds(nodeId);
+      // Subordinadas ocultas (camada recolhida) com posição salva também vão
+      // junto, para reaparecerem no lugar certo.
       const startPositions = {};
       [nodeId, ...subtreeIds].forEach(id => {
-        const n = layoutNodesFlat.find(x => x.id === id);
-        if (n) startPositions[id] = getLayoutPosition(n);
+        const n = layoutNodesById[id];
+        if (n) {
+          const pos = getLayoutPosition(n);
+          startPositions[id] = { x: pos.x, y: pos.y, p: n.parentId || null };
+        } else if (layoutOverridesDraft[id]) {
+          startPositions[id] = { ...layoutOverridesDraft[id] };
+        }
       });
 
       const startMouseX = e.clientX;
@@ -3815,7 +4132,7 @@
         const ddy = axis === 'y' ? dy : 0;
         Object.keys(startPositions).forEach(id => {
           const sp = startPositions[id];
-          layoutOverridesDraft[id] = { x: sp.x + ddx, y: sp.y + ddy };
+          layoutOverridesDraft[id] = { ...sp, x: sp.x + ddx, y: sp.y + ddy };
         });
         updateLayoutPositionsOnly();
       }
@@ -3829,9 +4146,26 @@
       document.addEventListener('mouseup', onUp);
     }
 
-    function commitLayoutChange() {
+    function snapshotLayoutState() {
+      return { positions: { ...layoutOverridesDraft }, orientation: { ...layoutOrientationDraft } };
+    }
+
+    // Volta a um estado do histórico. Se a orientação mudou, a árvore é
+    // medida de novo (as posições naturais dependem dela).
+    function restoreLayoutState(state) {
+      const orientationChanged = JSON.stringify(state.orientation) !== JSON.stringify(layoutOrientationDraft);
+      layoutOverridesDraft = { ...state.positions };
+      layoutOrientationDraft = { ...state.orientation };
+      if (orientationChanged) refreshLayoutFromTree();
+      else updateLayoutPositionsOnly();
+    }
+
+    // materialize = false só no "Resetar posições", que volta a seguir o
+    // desenho da tela principal.
+    function commitLayoutChange(materialize = true) {
+      if (materialize) materializeLayout();
       layoutHistory = layoutHistory.slice(0, layoutHistoryIndex + 1);
-      layoutHistory.push({ ...layoutOverridesDraft });
+      layoutHistory.push(snapshotLayoutState());
       layoutHistoryIndex = layoutHistory.length - 1;
       updateLayoutUndoRedoButtons();
       saveLayoutOverrides();
@@ -3840,8 +4174,7 @@
     function layoutUndo() {
       if (layoutHistoryIndex <= 0) return;
       layoutHistoryIndex--;
-      layoutOverridesDraft = { ...layoutHistory[layoutHistoryIndex] };
-      updateLayoutPositionsOnly();
+      restoreLayoutState(layoutHistory[layoutHistoryIndex]);
       updateLayoutUndoRedoButtons();
       saveLayoutOverrides();
     }
@@ -3849,18 +4182,18 @@
     function layoutRedo() {
       if (layoutHistoryIndex >= layoutHistory.length - 1) return;
       layoutHistoryIndex++;
-      layoutOverridesDraft = { ...layoutHistory[layoutHistoryIndex] };
-      updateLayoutPositionsOnly();
+      restoreLayoutState(layoutHistory[layoutHistoryIndex]);
       updateLayoutUndoRedoButtons();
       saveLayoutOverrides();
     }
 
     function layoutResetPositions() {
-      if (!Object.keys(layoutOverridesDraft).length) { showToast('As posições já estão nos valores originais.', 'info'); return; }
-      if (!confirm('Restaurar todas as caixas para a posição original?')) return;
+      if (!Object.keys(layoutOverridesDraft).length && !Object.keys(layoutOrientationDraft).length) { showToast('As posições já estão nos valores originais.', 'info'); return; }
+      if (!confirm('Restaurar todas as caixas para a posição original? A orientação das subordinadas (linha ou coluna) também volta a seguir a tela principal.')) return;
       layoutOverridesDraft = {};
-      updateLayoutPositionsOnly();
-      commitLayoutChange();
+      layoutOrientationDraft = {};
+      refreshLayoutFromTree();
+      commitLayoutChange(false);
       showToast('Posições restauradas.', 'info');
     }
 
@@ -3984,6 +4317,7 @@
     function saveLayoutOverrides() {
       if (!currentChartId || !chartsData[currentChartId]) return;
       chartsData[currentChartId].layoutOverrides = { ...layoutOverridesDraft };
+      chartsData[currentChartId].layoutOrientation = { ...layoutOrientationDraft };
       chartsData[currentChartId].updatedAt = Date.now();
       persistLocalCache();
       queueCloudSave(currentChartId);
@@ -4044,17 +4378,9 @@
       svg.setAttribute('height', height);
       svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
-      const byId = {};
-      layoutNodesFlat.forEach(n => { byId[n.id] = n; });
-      const staffBottoms = computeStaffSubtreeBottoms();
-      let paths = '';
-      layoutNodesFlat.forEach(n => {
-        const parent = n.parentId ? byId[n.parentId] : null;
-        if (!parent) return;
-        const p = getLayoutPosition(parent);
-        const c = getLayoutPosition(n);
-        paths += `<path d="${buildLayoutConnectorPath(p, c, n.type, parent.type, originX, originY, staffBottoms[parent.id])}" fill="none" stroke="#94a3b8" stroke-width="2"/>`;
-      });
+      const paths = computeLayoutConnectors()
+        .map(c => `<path d="${layoutConnectorPathD(c.points, originX, originY)}" fill="none" stroke="${c.blocked ? '#f59e0b' : '#94a3b8'}" stroke-width="2"${c.blocked ? ' stroke-dasharray="6 4"' : ''}/>`)
+        .join('');
       svg.innerHTML = paths;
       viewport.style.position = 'relative';
       viewport.appendChild(svg);
@@ -4112,7 +4438,8 @@
     }
 
     /* --- HTML NODE BUILDER (Main Recursive Function) --- */
-    function renderNodeHtml(node, depth) {
+    // inColumn: a unidade é item de uma coluna (fileira em modo vertical).
+    function renderNodeHtml(node, depth, inColumn = false) {
       const isSelected = node.id === selectedNodeId;
       const isCollapsed = collapsedNodes.has(node.id);
       const children = node.children || [];
@@ -4135,7 +4462,8 @@
 
       // Última camada em coluna: a espinha sai do canto inferior esquerdo do
       // pai e as assessorias dele vão todas para a direita.
-      const useVertical = hasLineChildren && !isCollapsed && lastLayerVertical && isTerminalRow(lineChildren);
+      const orientation = getChildrenOrientation(node, lineChildren, inColumn);
+      const useVertical = orientation.vertical;
 
       let staffHtml = '';
       if (hasStaffChildren && !isCollapsed) {
@@ -4146,13 +4474,13 @@
       let lineHtml = '';
       if (hasLineChildren && !isCollapsed) {
         if (!useVertical) downwardConnector = `<div class="mx-auto w-[2px] bg-slate-300 relative z-0" style="height: 25px;"></div>`;
-        lineHtml = `<ul class="${useVertical ? 'vertical-layer' : ''}">${lineChildren.map(c => renderNodeHtml(c, depth + 1)).join('')}</ul>`;
+        lineHtml = `<ul class="${useVertical ? 'vertical-layer' : ''}">${lineChildren.map(c => renderNodeHtml(c, depth + 1, useVertical)).join('')}</ul>`;
       }
 
       return `
         <li id="li-${node.id}">
           <div class="node-wrapper${useVertical ? ' vl-parent' : ''}">
-            <div id="card-${node.id}"
+            <div id="card-${node.id}"${orientation.eligible ? ` data-orient="${useVertical ? 'v' : 'h'}"` : ''}
                  draggable="true" ondragstart="handleDragStart(event, '${node.id}')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${node.id}')"
                  onclick="selectNode('${node.id}', event)"
                  onmouseenter="showUnitTooltip(event, '${node.id}')" onmousemove="moveUnitTooltip(event)" onmouseleave="hideUnitTooltip()"
@@ -4444,75 +4772,74 @@
       return children.every(c => !(c.children && c.children.length) || collapsedNodes.has(c.id));
     }
 
-    // Atualiza a aparência dos botões "Última camada" (tela principal e
-    // Ajustar Layout) conforme a orientação atual.
-    function syncLastLayerButtons() {
-      ['last-layer-orientation-btn', 'layout-last-layer-btn'].forEach(btnId => {
-        const btn = document.getElementById(btnId);
-        if (!btn) return;
-        btn.classList.toggle('bg-indigo-100', lastLayerVertical);
-        btn.classList.toggle('text-indigo-700', lastLayerVertical);
-        const icon = btn.querySelector('i');
-        if (icon) icon.className = (lastLayerVertical ? 'fa-solid fa-grip-lines-vertical' : 'fa-solid fa-grip-lines') + (btnId === 'layout-last-layer-btn' ? ' text-xs' : '');
-        btn.title = lastLayerVertical
-          ? 'Última camada: vertical (clique para voltar à horizontal)'
-          : 'Última camada: horizontal (clique para deixar vertical)';
+    // Uma fileira é "penúltima" quando cada unidade dela está recolhida, não
+    // tem filhas, ou tem só filhas de linha que formam uma fileira terminal.
+    // Unidades com assessorias ficam de fora: na coluna, a zona de assessoria
+    // ficaria por cima da espinha.
+    function isPenultimateRow(children) {
+      return children.every(c => {
+        if (collapsedNodes.has(c.id)) return true;
+        const kids = c.children || [];
+        return !kids.some(k => k.type === 'assessoria') && isTerminalRow(kids);
       });
     }
 
-    // Ids das caixas cujo desenho muda quando a última camada troca de
-    // orientação: as unidades da fileira vertical e as assessorias do pai
-    // dessa fileira (que passam a ficar todas à direita).
-    function collectLastLayerAffectedIds() {
-      const ids = new Set();
-      const root = document.getElementById('tree-root');
-      if (!root) return ids;
-      root.querySelectorAll('ul.vertical-layer .node-card, .staff-zone.all-right .node-card').forEach(el => ids.add(el.id.replace(/^card-/, '')));
-      return ids;
+    // Decide se as subordinadas de linha de uma unidade ficam em coluna e se
+    // a unidade pode ter essa orientação escolhida individualmente na tela
+    // "Ajustar Layout" (eligible). Item de uma coluna que tem subordinadas
+    // sempre as mantém em coluna — é a "última camada que entra junto".
+    function getChildrenOrientation(node, lineChildren, inColumn) {
+      if (!lineChildren.length || collapsedNodes.has(node.id)) return { vertical: false, eligible: false };
+      if (inColumn) return { vertical: true, eligible: false };
+      const terminal = isTerminalRow(lineChildren);
+      const penultimate = !terminal && isPenultimateRow(lineChildren);
+      if (!terminal && !penultimate) return { vertical: false, eligible: false };
+      const override = layoutOrientationOverrides ? layoutOrientationOverrides[node.id] : null;
+      const vertical = override
+        ? override === 'v'
+        : (lastLayerMode >= 1 && terminal) || (lastLayerMode === 2 && penultimate);
+      return { vertical, eligible: true };
     }
 
-    // Troca a orientação da última camada. As posições manuais do Ajustar
-    // Layout são preservadas assim: as caixas afetadas pela troca perdem o
-    // ajuste (voltam à posição natural da nova orientação) e as demais
-    // mantêm o mesmo deslocamento que tinham em relação à posição natural.
-    function toggleLastLayerOrientation() {
-      const layoutOpen = !document.getElementById('layout-adjust-screen')?.classList.contains('hidden');
-      const chart = currentChartId ? chartsData[currentChartId] : null;
-      const before = buildLayoutFlatNodes() || [];
-      const affected = collectLastLayerAffectedIds();
+    function getChartLastLayerMode(chart) {
+      if (!chart) return 0;
+      if (typeof chart.lastLayerMode === 'number') return Math.max(0, Math.min(2, chart.lastLayerMode));
+      return chart.lastLayerVertical ? 1 : 0; // organogramas salvos antes dos 3 modos
+    }
 
-      lastLayerVertical = !lastLayerVertical;
+    const LAST_LAYER_MODE_UI = [
+      { icon: 'fa-grip-lines', title: 'Camadas finais em linha (clique para deixar a última camada em coluna)' },
+      { icon: 'fa-grip-lines-vertical', title: 'Última camada em coluna (clique para deixar as 2 últimas camadas em coluna)' },
+      { icon: 'fa-bars-staggered', title: 'As 2 últimas camadas em coluna (clique para voltar tudo para linha)' }
+    ];
+
+    // Atualiza a aparência do botão de camadas finais da tela principal.
+    function syncLastLayerButtons() {
+      const btn = document.getElementById('last-layer-orientation-btn');
+      if (!btn) return;
+      const ui = LAST_LAYER_MODE_UI[lastLayerMode] || LAST_LAYER_MODE_UI[0];
+      btn.classList.toggle('bg-indigo-100', lastLayerMode > 0);
+      btn.classList.toggle('text-indigo-700', lastLayerMode > 0);
+      const icon = btn.querySelector('i');
+      if (icon) icon.className = `fa-solid ${ui.icon}`;
+      btn.title = ui.title;
+    }
+
+    // Alterna entre os 3 modos: em linha → última camada em coluna → 2 últimas
+    // em coluna → em linha. Não mexe nos ajustes da tela "Ajustar Layout":
+    // lá cada unidade guarda a própria orientação, e as posições salvas não
+    // dependem da posição calculada pela árvore.
+    function toggleLastLayerOrientation() {
+      lastLayerMode = (lastLayerMode + 1) % 3;
       syncLastLayerButtons();
       renderApp();
-
-      const after = buildLayoutFlatNodes() || [];
-      collectLastLayerAffectedIds().forEach(id => affected.add(id));
-
-      if (chart) {
-        const source = layoutOpen ? layoutOverridesDraft : (chart.layoutOverrides || {});
-        const beforeMap = new Map(before.map(n => [n.id, n]));
-        const afterMap = new Map(after.map(n => [n.id, n]));
-        const remapped = {};
-        let dropped = 0;
-        Object.entries(source).forEach(([id, pos]) => {
-          if (affected.has(id)) { dropped++; return; }
-          const b = beforeMap.get(id), a = afterMap.get(id);
-          remapped[id] = (a && b) ? { x: pos.x + (a.x - b.x), y: pos.y + (a.y - b.y) } : pos;
-        });
-        chart.lastLayerVertical = lastLayerVertical;
-        if (layoutOpen) {
-          layoutOverridesDraft = remapped;
-          layoutNodesFlat = after.length ? after : layoutNodesFlat;
-          renderLayoutCanvas();
-          commitLayoutChange(); // também salva o organograma (orientação incluída)
-        } else {
-          if (Object.keys(source).length) chart.layoutOverrides = remapped;
-          chart.updatedAt = Date.now();
-          persistLocalCache();
-          queueCloudSave(currentChartId);
-        }
-        if (dropped) showToast(`${dropped} ajuste(s) manual(is) da última camada foram descartados na troca de orientação.`, 'info');
-      }
+      const chart = currentChartId ? chartsData[currentChartId] : null;
+      if (!chart) return;
+      chart.lastLayerMode = lastLayerMode;
+      delete chart.lastLayerVertical;
+      chart.updatedAt = Date.now();
+      persistLocalCache();
+      queueCloudSave(currentChartId);
     }
 
     function changeLayer(delta) {
