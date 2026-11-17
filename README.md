@@ -138,6 +138,24 @@ Firestore como banco de dados na nuvem.
   fazer o organograma "pular" para longe do centro ao clicar neles. Essa
   correção vale tanto para a tela do organograma quanto para "Ajustar
   Layout".
+- **Reordenar subordinadas**: no painel "Detalhes da Unidade", o botão
+  **Reordenar** (ao lado do resumo "Subordinadas: ...") abre uma janela com
+  as subordinadas diretas da unidade, para escolher a sequência em que
+  aparecem no organograma — arrastando pela alça ou com as setas ↑/↓. A
+  nova ordem só é aplicada ao clicar em **Salvar ordem** e pode ser desfeita
+  com o botão de desfazer do histórico.
+  - **Linha e assessoria em grupos separados**: as unidades de linha
+    definem a ordem na fileira abaixo (da esquerda para a direita, ou de
+    cima para baixo quando em coluna); as assessorias definem a ordem na
+    zona lateral (1ª à direita, 2ª à esquerda, e assim por diante). Cada
+    grupo é reordenado só dentro de si.
+  - O botão fica desativado quando a unidade não tem pelo menos 2
+    subordinadas do mesmo tipo.
+  - **Ajustar Layout**: as posições manuais das subordinadas reordenadas (e
+    das unidades abaixo delas) são liberadas, para que sigam a nova ordem
+    também naquela tela. As demais caixas continuam onde estavam.
+  - A nova ordem vale para a tela principal, os modos de impressão/PDF e a
+    tabela de competências.
 
 ## Arquivos deste pacote
 

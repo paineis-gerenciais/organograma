@@ -1515,6 +1515,12 @@
         <div class="pb-4 border-b border-slate-100">
           <h3 id="sb-display-name" class="font-bold text-slate-800 text-xl leading-snug">Nome</h3>
           <p class="text-xs text-slate-500 mt-2 font-medium"><i class="fa-solid fa-sitemap mr-1"></i> Vinculada a: <strong id="sb-parent-name" class="text-slate-700"></strong></p>
+          <div class="mt-3 flex items-center justify-between gap-3">
+            <p id="sb-children-summary" class="text-xs text-slate-500 font-medium"></p>
+            <button type="button" id="sb-reorder-btn" onclick="openReorderModal()" class="shrink-0 bg-white border border-slate-300 hover:bg-indigo-50 hover:border-indigo-300 text-slate-700 font-medium text-xs px-2.5 py-1.5 rounded-lg shadow-sm flex items-center gap-1.5 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-white disabled:hover:border-slate-300" title="Escolher a sequência em que as subordinadas aparecem no organograma">
+              <i class="fa-solid fa-arrow-down-short-wide text-indigo-500"></i><span>Reordenar</span>
+            </button>
+          </div>
         </div>
         <form id="unit-form" onsubmit="handleFormSubmit(event)" class="space-y-4">
           <input type="hidden" id="sb-input-id">
@@ -1626,6 +1632,38 @@
           <button type="button" onclick="closeRemoveRootModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
           <button type="button" onclick="confirmRemoveRoot()" class="bg-rose-600 hover:bg-rose-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-check"></i><span>Remover e promover</span></button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: REORDENAR SUBORDINADAS -->
+  <div id="reorder-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] hidden flex items-center justify-center p-4 no-print" onclick="if (event.target === this) closeReorderModal()">
+    <div class="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden flex flex-col max-h-[85vh]">
+      <div class="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-start justify-between gap-3">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <i class="fa-solid fa-arrow-down-short-wide text-indigo-600"></i><h3 class="font-bold text-slate-800 text-base">Reordenar subordinadas</h3>
+          </div>
+          <p class="text-xs text-slate-500 mt-1 truncate">de <strong id="reorder-unit-name" class="text-slate-700"></strong></p>
+        </div>
+        <button onclick="closeReorderModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg"><i class="fa-solid fa-xmark text-lg"></i></button>
+      </div>
+      <div class="p-6 space-y-5 overflow-y-auto">
+        <p class="text-[11px] text-slate-500 leading-relaxed">Arraste os itens pela alça <i class="fa-solid fa-grip-vertical"></i> ou use as setas para mudar a posição. A nova ordem só é aplicada ao clicar em <strong>Salvar ordem</strong>.</p>
+        <section id="reorder-line-section">
+          <h4 class="text-xs font-bold text-slate-700">Unidades de linha</h4>
+          <p class="text-[11px] text-slate-500 mb-2">Ordem na fileira abaixo da unidade: da esquerda para a direita (ou de cima para baixo, quando em coluna).</p>
+          <ol id="reorder-line-list" data-group="line" class="space-y-1.5"></ol>
+        </section>
+        <section id="reorder-staff-section">
+          <h4 class="text-xs font-bold text-slate-700">Assessorias</h4>
+          <p class="text-[11px] text-slate-500 mb-2">Ordem de cima para baixo, ao lado da unidade: a 1ª fica à direita, a 2ª à esquerda e assim por diante (todas à direita, quando as subordinadas estão em coluna).</p>
+          <ol id="reorder-staff-list" data-group="staff" class="space-y-1.5"></ol>
+        </section>
+      </div>
+      <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex justify-end gap-3">
+        <button type="button" onclick="closeReorderModal()" class="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg">Cancelar</button>
+        <button type="button" onclick="saveReorder()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-sm px-5 py-2 rounded-lg shadow-sm flex items-center gap-1.5"><i class="fa-solid fa-check"></i><span>Salvar ordem</span></button>
       </div>
     </div>
   </div>
@@ -4987,6 +5025,8 @@
       document.getElementById('sb-input-servers').value = node.serversCount || '';
       document.getElementById('sb-input-desc').value = node.description || '';
 
+      updateSidebarChildrenSummary(node);
+
       const parentSelect = document.getElementById('sb-input-parent');
       parentSelect.innerHTML = '';
       if (node.id === orgTree.id) {
@@ -5111,6 +5151,213 @@
       setTimeout(centerTree, 60);
       showToast(`"${oldRoot.name}" removida. "${chosen.name}" agora é a unidade superior.`, "info");
     }
+
+    /* --- REORDENAR SUBORDINADAS ---
+       A sequência das subordinadas é a ordem do array children. Linha e
+       assessoria são desenhadas em lugares diferentes (fileira abaixo ×
+       zona lateral), então cada grupo é reordenado só dentro de si: ao
+       salvar, cada grupo volta para as mesmas posições do array que ele
+       ocupava, sem mudar a intercalação entre linha e assessoria. */
+    let reorderState = null; // { nodeId, line: [ids], staff: [ids], initial: { line, staff } }
+    let reorderDragId = null;
+
+    function splitChildrenByGroup(node) {
+      const children = node.children || [];
+      return {
+        line: children.filter(c => c.type !== 'assessoria'),
+        staff: children.filter(c => c.type === 'assessoria')
+      };
+    }
+
+    function updateSidebarChildrenSummary(node) {
+      const { line, staff } = splitChildrenByGroup(node);
+      const parts = [];
+      if (line.length) parts.push(`${line.length} de linha`);
+      if (staff.length) parts.push(`${staff.length} assessoria${staff.length > 1 ? 's' : ''}`);
+      document.getElementById('sb-children-summary').innerHTML =
+        `<i class="fa-solid fa-diagram-project mr-1"></i> Subordinadas: <strong class="text-slate-700">${parts.length ? parts.join(' · ') : 'nenhuma'}</strong>`;
+      const btn = document.getElementById('sb-reorder-btn');
+      const canReorder = line.length > 1 || staff.length > 1;
+      btn.disabled = !canReorder;
+      btn.title = canReorder
+        ? 'Escolher a sequência em que as subordinadas aparecem no organograma'
+        : 'É preciso ter ao menos 2 subordinadas do mesmo tipo (linha ou assessoria) para reordenar';
+    }
+
+    function openReorderModal() {
+      const node = selectedNodeId ? findNodeById(orgTree, selectedNodeId) : null;
+      if (!node) return;
+      const { line, staff } = splitChildrenByGroup(node);
+      if (line.length < 2 && staff.length < 2) {
+        showToast('Não há subordinadas suficientes para reordenar.', 'info');
+        return;
+      }
+      reorderState = {
+        nodeId: node.id,
+        line: line.map(c => c.id),
+        staff: staff.map(c => c.id),
+        initial: { line: line.map(c => c.id), staff: staff.map(c => c.id) }
+      };
+      document.getElementById('reorder-unit-name').textContent = node.name || 'Sem nome';
+      renderReorderLists();
+      document.getElementById('reorder-modal').classList.remove('hidden');
+    }
+
+    function closeReorderModal() {
+      document.getElementById('reorder-modal').classList.add('hidden');
+      reorderState = null;
+      reorderDragId = null;
+    }
+
+    function renderReorderLists() {
+      if (!reorderState) return;
+      const node = findNodeById(orgTree, reorderState.nodeId);
+      if (!node) { closeReorderModal(); return; }
+      const byId = {};
+      (node.children || []).forEach(c => { byId[c.id] = c; });
+      ['line', 'staff'].forEach(group => {
+        const ids = reorderState[group];
+        const section = document.getElementById(`reorder-${group}-section`);
+        const list = document.getElementById(`reorder-${group}-list`);
+        section.classList.toggle('hidden', ids.length === 0);
+        const canMove = ids.length > 1;
+        list.innerHTML = ids.map((id, i) => {
+          const c = byId[id];
+          if (!c) return '';
+          const subCount = (c.children || []).length;
+          const upDisabled = i === 0 ? 'disabled' : '';
+          const downDisabled = i === ids.length - 1 ? 'disabled' : '';
+          return `
+            <li data-id="${escapeHtml(id)}" ${canMove ? 'draggable="true"' : ''}
+                ondragstart="handleReorderDragStart(event, '${escapeHtml(id)}')"
+                ondragover="handleReorderDragOver(event, '${group}')"
+                ondragend="handleReorderDragEnd(event, '${group}')"
+                ondrop="event.preventDefault()"
+                class="reorder-item flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-2 py-1.5 shadow-sm">
+              <span class="${canMove ? 'cursor-grab text-slate-400 hover:text-slate-600' : 'text-slate-200'} px-1" title="Arraste para mudar a posição"><i class="fa-solid fa-grip-vertical"></i></span>
+              <span class="w-5 text-center text-[11px] font-bold ${group === 'staff' ? 'text-purple-600' : 'text-indigo-600'}">${i + 1}</span>
+              <div class="flex-1 min-w-0">
+                <div class="text-xs font-semibold text-slate-800 truncate" title="${escapeHtml(c.name || 'Sem nome')}">${escapeHtml(c.name || 'Sem nome')}</div>
+                <div class="text-[10px] text-slate-400 truncate">${c.sigla ? escapeHtml(c.sigla) + ' · ' : ''}${subCount ? subCount + ' subordinada' + (subCount > 1 ? 's' : '') : 'sem subordinadas'}</div>
+              </div>
+              <button type="button" onclick="moveReorderItem('${group}', ${i}, -1)" ${upDisabled} class="w-7 h-7 rounded-md text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-25 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Mover para cima"><i class="fa-solid fa-arrow-up text-xs"></i></button>
+              <button type="button" onclick="moveReorderItem('${group}', ${i}, 1)" ${downDisabled} class="w-7 h-7 rounded-md text-slate-500 hover:bg-slate-100 hover:text-indigo-600 disabled:opacity-25 disabled:hover:bg-transparent disabled:cursor-not-allowed" title="Mover para baixo"><i class="fa-solid fa-arrow-down text-xs"></i></button>
+            </li>`;
+        }).join('');
+      });
+    }
+
+    function moveReorderItem(group, index, delta) {
+      if (!reorderState) return;
+      const ids = reorderState[group];
+      const target = index + delta;
+      if (target < 0 || target >= ids.length) return;
+      [ids[index], ids[target]] = [ids[target], ids[index]];
+      renderReorderLists();
+    }
+
+    // Arrastar dentro da lista: o item é movido no DOM enquanto arrasta e a
+    // ordem é lida do DOM ao soltar (só dentro do próprio grupo).
+    function handleReorderDragStart(event, id) {
+      reorderDragId = id;
+      event.dataTransfer.effectAllowed = 'move';
+      try { event.dataTransfer.setData('text/plain', id); } catch (e) {}
+      const li = event.currentTarget;
+      setTimeout(() => li.classList.add('opacity-40'), 0);
+    }
+    function handleReorderDragOver(event, group) {
+      if (!reorderDragId || !reorderState || !reorderState[group].includes(reorderDragId)) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      const overLi = event.currentTarget;
+      const list = overLi.parentElement;
+      const dragged = list.querySelector(`li[data-id="${CSS.escape(reorderDragId)}"]`);
+      if (!dragged || dragged === overLi) return;
+      const rect = overLi.getBoundingClientRect();
+      const after = event.clientY > rect.top + rect.height / 2;
+      list.insertBefore(dragged, after ? overLi.nextSibling : overLi);
+    }
+    function handleReorderDragEnd(event, group) {
+      if (!reorderState) { reorderDragId = null; return; }
+      const list = document.getElementById(`reorder-${group}-list`);
+      const ids = Array.from(list.querySelectorAll('li[data-id]')).map(li => li.dataset.id);
+      if (ids.length === reorderState[group].length) reorderState[group] = ids;
+      reorderDragId = null;
+      renderReorderLists();
+    }
+
+    // Salva os valores digitados no formulário do painel (ainda não salvos),
+    // para não perdê-los quando o painel é atualizado após reordenar.
+    function captureSidebarFormValues() {
+      const ids = ['sb-input-name', 'sb-input-sigla', 'sb-input-type', 'sb-input-servers', 'sb-input-desc', 'sb-input-parent'];
+      const values = {};
+      ids.forEach(id => { const el = document.getElementById(id); if (el) values[id] = el.value; });
+      return values;
+    }
+    function restoreSidebarFormValues(values) {
+      Object.entries(values || {}).forEach(([id, value]) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        if (el.tagName === 'SELECT' && !Array.from(el.options).some(o => o.value === value)) return;
+        el.value = value;
+      });
+    }
+
+    function saveReorder() {
+      if (!reorderState) return;
+      const node = findNodeById(orgTree, reorderState.nodeId);
+      if (!node) { closeReorderModal(); return; }
+      const changedGroups = ['line', 'staff'].filter(g =>
+        reorderState[g].join('|') !== reorderState.initial[g].join('|'));
+      if (!changedGroups.length) {
+        closeReorderModal();
+        showToast('A ordem não foi alterada.', 'info');
+        return;
+      }
+
+      const formValues = captureSidebarFormValues();
+      recordHistoryState();
+
+      // Cada grupo volta para os mesmos "lugares" do array que ocupava.
+      const byId = {};
+      node.children.forEach(c => { byId[c.id] = c; });
+      const queues = {
+        line: reorderState.line.map(id => byId[id]).filter(Boolean),
+        staff: reorderState.staff.map(id => byId[id]).filter(Boolean)
+      };
+      node.children = node.children.map(c => {
+        const group = c.type === 'assessoria' ? 'staff' : 'line';
+        return queues[group].shift() || c;
+      });
+
+      // "Ajustar Layout": libera as posições manuais das unidades
+      // reordenadas (e de tudo abaixo delas), para que sigam a nova ordem.
+      let releasedCount = 0;
+      const chart = chartsData[currentChartId];
+      if (chart && chart.layoutOverrides) {
+        changedGroups.forEach(group => {
+          reorderState[group].forEach(id => {
+            const child = byId[id];
+            if (!child) return;
+            getAllNodesList(child).forEach(n => {
+              if (chart.layoutOverrides[n.id]) { delete chart.layoutOverrides[n.id]; releasedCount++; }
+            });
+          });
+        });
+      }
+
+      closeReorderModal();
+      saveData();
+      renderApp();
+      restoreSidebarFormValues(formValues);
+      showToast(releasedCount
+        ? 'Ordem das subordinadas atualizada. As posições manuais delas no "Ajustar Layout" foram liberadas.'
+        : 'Ordem das subordinadas atualizada!', 'success');
+    }
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && reorderState) closeReorderModal();
+    });
 
     /* --- ADD MODAL (APP) --- */
     function openAddModalForParent(parentId) {
