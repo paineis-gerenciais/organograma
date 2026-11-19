@@ -115,12 +115,36 @@ Firestore como banco de dados na nuvem.
   - **Otimizar respeita as colunas**: unidades com as subordinadas em coluna
     continuam em coluna depois de otimizar (espinha à esquerda e
     assessorias todas à direita, como na tela principal).
+  - **Subordinadas de assessoria**: as unidades que ficam abaixo de uma
+    assessoria agora têm a linha saindo da parte de baixo da caixa da
+    assessoria (antes saía ora da lateral, ora de baixo, com desvios). Toda
+    caixa desse ramo que tenha subordinadas — a assessoria e as unidades
+    abaixo dela — ganhou o mesmo botão redondo de linha/coluna, cada uma
+    decidindo só pelas suas subordinadas diretas:
+    - **Coluna** (como abre): as subordinadas ficam uma abaixo da outra,
+      recuadas, ligadas por uma espinha que desce da caixa.
+    - **Linha**: ficam lado a lado, na ordem da esquerda para a direita. A
+      fileira começa embaixo da caixa e cresce para o lado de fora, sem
+      cruzar a linha central da unidade superior. Se encostar em outra
+      caixa, é só arrastar (ou usar o **Otimizar**, que respeita a escolha).
+    - A ligação entre a assessoria e a unidade superior dela não mudou.
+    - Organogramas que já tinham posições ajustadas continuam com as caixas
+      onde estavam; só o desenho da linha muda.
+    - Vale só para a tela "Ajustar Layout" (e o PDF gerado por ela); a tela
+      principal continua com o desenho lateral de sempre.
+  - **Imprimir seleção**: botão ao lado do **Gerar PDF**. Funciona como o da
+    tela principal — arraste um retângulo sobre o desenho, as caixas tocadas
+    entram por inteiro, e a área sai impressa em tamanho exato, numa folha
+    sob medida — só que usando as posições ajustadas. Enquanto o recorte
+    está sendo escolhido, as caixas não se movem; zoom e camadas continuam
+    funcionando.
   > Importante: esse ajuste de posição vale só dentro da própria tela
   > "Ajustar Layout" — a tela principal do organograma continua usando o
-  > layout automático de árvore (hierárquico), e os modos de impressão
-  > também não usam essas posições manuais ainda. Se no futuro você quiser
-  > que a impressão ou a tela principal sigam esse layout ajustado, é um
-  > passo a mais que peço para tratarmos separadamente.
+  > layout automático de árvore (hierárquico), e os modos de impressão da
+  > tela principal também não usam essas posições manuais ainda (o **Gerar
+  > PDF** e o **Imprimir seleção** da própria tela "Ajustar Layout" usam).
+  > Se no futuro você quiser que a impressão ou a tela principal sigam esse
+  > layout ajustado, é um passo a mais que peço para tratarmos separadamente.
 - **Imprimir/PDF ajusta a escala automaticamente**: antes, ele sempre
   imprimia no tamanho exato da tela (1:1), então organogramas grandes podiam
   sair em muitas páginas. Agora ele testa reduções de escala (até 50%) e
