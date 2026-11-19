@@ -173,7 +173,8 @@
       stroke-dasharray: 6 4;
     }
     /* Botão de orientação das subordinadas (linha × coluna) nas caixas da
-       penúltima camada e da anterior a ela. */
+       penúltima camada e da anterior a ela, e em toda caixa com subordinadas
+       dentro de um ramo de assessoria. */
     #layout-canvas .layout-orient-btn {
       position: absolute;
       right: -10px;
@@ -438,8 +439,24 @@
       margin-right: 0;
     }
 
+    /* Ramo de assessoria montado para a tela "Ajustar Layout" (só para medir
+       a posição das caixas; as linhas são desenhadas por lá). Cada caixa do
+       ramo escolhe se as subordinadas ficam em coluna (recuadas, abaixo dela)
+       ou em linha (lado a lado, na ordem da esquerda para a direita). Tudo
+       cresce para o lado de fora — o lado oposto à linha central da unidade
+       superior. */
+    .lsd { display: flex; width: max-content; }
+    .lsd-col { flex-direction: column; gap: 16px; margin-top: 14px; }
+    .lsd-right.lsd-col { align-items: flex-start; margin-left: 40px; }
+    .lsd-left.lsd-col { align-items: flex-end; margin-right: 40px; }
+    .lsd-row { flex-direction: row; align-items: flex-start; gap: 32px; margin-top: 44px; }
+    .lsd-item { display: flex; flex-direction: column; width: max-content; }
+    .lsd-right .lsd-item { align-items: flex-start; }
+    .lsd-left .lsd-item { align-items: flex-end; }
+
     /* ==================== IMPRESSÃO DE RECORTE ==================== */
-    #crop-selection-box {
+    #crop-selection-box,
+    #layout-crop-box {
       position: absolute;
       display: none;
       border: 2px dashed #4f46e5;
@@ -448,7 +465,8 @@
       pointer-events: none;
       z-index: 70;
     }
-    #crop-selection-toolbar {
+    #crop-selection-toolbar,
+    #layout-crop-toolbar {
       position: absolute;
       top: 16px;
       right: 16px;
@@ -458,6 +476,9 @@
     }
     #canvas-container.crop-selection-active { cursor: crosshair !important; }
     #canvas-container.crop-selection-active .node-card { cursor: crosshair !important; }
+    #layout-canvas-viewport.crop-selection-active,
+    #layout-canvas-viewport.crop-selection-active .layout-node-card,
+    #layout-canvas-viewport.crop-selection-active .layout-orient-btn { cursor: crosshair !important; }
 
     #crop-print-page { display: none; }
     #crop-print-header {
@@ -1005,6 +1026,9 @@
           <i class="fa-solid fa-arrow-rotate-left text-rose-500"></i><span class="hidden sm:inline">Resetar posições</span>
         </button>
         <div class="h-6 w-px bg-slate-300 shrink-0"></div>
+        <button onclick="startLayoutCropMode()" class="bg-white border border-slate-300 hover:bg-amber-50 hover:border-amber-300 text-slate-700 font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Selecione com o mouse uma área do layout ajustado para imprimir">
+          <i class="fa-solid fa-crop-simple text-amber-600"></i><span class="hidden sm:inline">Imprimir seleção</span>
+        </button>
         <button onclick="triggerLayoutPrint()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium text-xs px-3 py-1.5 h-[34px] rounded-lg shadow-sm flex items-center gap-2 transition-colors" title="Gerar PDF com o layout ajustado">
           <i class="fa-solid fa-file-pdf"></i><span>Gerar PDF</span>
         </button>
@@ -1028,8 +1052,24 @@
         </div>
       </div>
 
+      <!-- Seleção de recorte para impressão (layout ajustado) -->
+      <div id="layout-crop-toolbar" class="bg-white/95 backdrop-blur border border-slate-200 rounded-xl shadow-xl p-3 no-print">
+        <div class="flex items-start gap-3">
+          <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center shrink-0"><i class="fa-solid fa-crop-simple"></i></div>
+          <div class="min-w-0">
+            <div class="text-xs font-bold text-slate-800">Selecione o recorte</div>
+            <div id="layout-crop-help" class="text-[10px] leading-snug text-slate-500 mt-0.5">Arraste sobre o organograma. Caixas tocadas pela seleção serão incluídas por inteiro.</div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 mt-3">
+          <button type="button" onclick="cancelLayoutCropMode()" class="px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:bg-slate-100">Cancelar</button>
+          <button id="layout-crop-confirm-btn" type="button" onclick="confirmLayoutCropPrint()" disabled class="px-3 py-1.5 rounded-lg text-xs font-bold text-white bg-amber-500 hover:bg-amber-600 disabled:opacity-40 disabled:cursor-not-allowed"><i class="fa-solid fa-print mr-1"></i> Imprimir seleção</button>
+        </div>
+      </div>
+
       <div id="layout-canvas" style="position:absolute; top:0; left:0; transform-origin:0 0;">
         <svg id="layout-canvas-connectors" style="position:absolute; top:0; left:0; pointer-events:none;"></svg>
+        <div id="layout-crop-box"></div>
       </div>
     </div>
   </div>
@@ -2038,6 +2078,7 @@
       setupCanvasPanZoom();
       setupLayoutPanZoom();
       setupCropSelection();
+      setupLayoutCropSelection();
       setupHistoryShortcuts();
       setupComparePanZoom();
       renderDashboard();
@@ -3559,6 +3600,10 @@
           const node = findNodeById(orgTree, id);
           const parent = findParentNode(orgTree, id);
           const ownList = el.parentElement?.parentElement?.parentElement;
+          // Unidade abaixo de uma assessoria (ramo de assessoria): a lista
+          // dela diz se está em coluna ou em linha, e de que lado da linha
+          // central da unidade superior o ramo fica.
+          const branchList = el.parentElement?.classList.contains('lsd-item') ? el.parentElement.parentElement : null;
           return {
             id,
             name: node?.name || 'Sem nome',
@@ -3566,7 +3611,10 @@
             type: node?.type || 'linha',
             parentId: parent ? parent.id : null,
             // Item de uma coluna: a linha chega pela lateral, vinda da espinha.
-            inColumn: !!(el.parentElement?.classList.contains('node-wrapper') && ownList?.classList.contains('vertical-layer')),
+            inColumn: !!(el.parentElement?.classList.contains('node-wrapper') && ownList?.classList.contains('vertical-layer'))
+              || !!branchList?.classList.contains('lsd-col'),
+            inBranch: !!branchList,
+            branchSide: branchList ? (branchList.classList.contains('lsd-left') ? 'left' : 'right') : null,
             // 'h' ou 'v' quando a orientação das subordinadas pode ser escolhida.
             orient: el.dataset.orient || null,
             x: (r.left - rootRect.left) / z,
@@ -3618,6 +3666,14 @@
     let layoutZoomLevel = 1;
     let layoutPanX = 0;
     let layoutPanY = 0;
+    // Canto superior esquerdo do canvas, em coordenadas do desenho (muda
+    // quando as caixas mudam de lugar).
+    let layoutCanvasOrigin = { x: 0, y: 0 };
+    // "Imprimir seleção" desta tela: o recorte é guardado em coordenadas do
+    // desenho ({ x, y, w, h }), então continua valendo com zoom e navegação.
+    let layoutCropActive = false;
+    let layoutCropDragStart = null;
+    let layoutCropRect = null;
     let isDraggingLayoutCanvas = false;
     let layoutDragStartX = 0;
     let layoutDragStartY = 0;
@@ -3634,7 +3690,7 @@
       const viewport = document.getElementById('layout-canvas-viewport');
       if (!viewport) return;
       viewport.addEventListener('mousedown', (e) => {
-        if (e.target.closest('.layout-node-card')) return;
+        if (layoutCropActive || e.target.closest('.layout-node-card')) return;
         isDraggingLayoutCanvas = true;
         layoutDragStartX = e.clientX - layoutPanX;
         layoutDragStartY = e.clientY - layoutPanY;
@@ -3704,12 +3760,15 @@
     // das subordinadas (as 2 últimas camadas).
     function toggleLayoutOrientation(nodeId) {
       const node = layoutNodesById[nodeId];
-      if (!node || !node.orient) return;
+      if (layoutCropActive || !node || !node.orient) return;
       materializeLayout();
       layoutOrientationDraft[nodeId] = node.orient === 'v' ? 'h' : 'v';
+      // Num ramo de assessoria cada caixa tem a própria escolha, então a das
+      // caixas de baixo é mantida; só as posições são refeitas.
+      const branchIds = getStaffBranchIds();
       getSubtreeIds(nodeId).forEach(id => {
         delete layoutOverridesDraft[id];
-        delete layoutOrientationDraft[id];
+        if (!branchIds.has(id)) delete layoutOrientationDraft[id];
       });
       refreshLayoutFromTree();
       commitLayoutChange();
@@ -3739,6 +3798,7 @@
     }
 
     function closeLayoutAdjustScreen() {
+      cancelLayoutCropMode();
       const screen = document.getElementById('layout-adjust-screen');
       screen.classList.add('hidden');
       screen.classList.remove('flex');
@@ -3807,6 +3867,8 @@
 
       canvas.style.width = `${width}px`;
       canvas.style.height = `${height}px`;
+      layoutCanvasOrigin = { x: originX, y: originY };
+      positionLayoutCropBox();
 
       layoutNodesFlat.forEach(n => {
         const el = document.getElementById(`layout-card-${n.id}`);
@@ -3868,12 +3930,14 @@
     // Trajeto padrão do conector entre pai e filho (lista de pontos), mais a
     // porta de saída e a de chegada com a direção de cada uma — usadas pelo
     // desvio de caixas quando o trajeto padrão passa por trás de alguma.
-    // - Assessoria com pai do tipo "linha": a linha sai por baixo do pai,
-    //   desce pela linha central até a altura da assessoria e vira para
-    //   entrar na lateral dela — igual à tela principal.
-    // - Assessoria com pai também assessoria: lateral a lateral.
-    // - Item de uma coluna: espinha que desce do canto inferior esquerdo do
-    //   pai e entra pela lateral do item.
+    // - Assessoria: a linha sai por baixo do pai, desce pela linha central
+    //   até a altura da assessoria e vira para entrar na lateral dela — igual
+    //   à tela principal.
+    // - Item de uma coluna: espinha que desce do canto inferior do pai e
+    //   entra pela lateral do item. Vale também para as unidades abaixo de
+    //   uma assessoria (ramo de assessoria); num ramo à esquerda da linha
+    //   central, a espinha sai do canto direito e o ramo cresce para a
+    //   esquerda.
     // - Demais casos: de cima para baixo, com a dobra a uma distância fixa
     //   da caixa de cima (ou logo abaixo das assessorias do pai).
     function buildLayoutConnectorSpec(parentNode, childNode, p, c, staffBottom) {
@@ -3882,29 +3946,21 @@
       const parentCenterX = p.x + p.w / 2;
       const parentBottomY = p.y + p.h;
 
-      if (childNode.type === 'assessoria') {
+      if (childNode.type === 'assessoria' && !childNode.inBranch) {
         const side = childCenterX < parentCenterX ? 'left' : 'right';
         const childEdgeX = side === 'left' ? c.x + c.w : c.x;
         const endDir = side === 'left' ? [-1, 0] : [1, 0];
-        if (parentNode.type !== 'assessoria') {
-          return {
-            points: [[parentCenterX, parentBottomY], [parentCenterX, childCenterY], [childEdgeX, childCenterY]],
-            start: { x: parentCenterX, y: parentBottomY, dir: [0, 1] },
-            end: { x: childEdgeX, y: childCenterY, dir: endDir }
-          };
-        }
-        const parentCenterY = p.y + p.h / 2;
-        const parentEdgeX = side === 'left' ? p.x : p.x + p.w;
-        const bendX = side === 'left' ? parentEdgeX - LAYOUT_CONNECTOR_BEND_GAP : parentEdgeX + LAYOUT_CONNECTOR_BEND_GAP;
         return {
-          points: [[parentEdgeX, parentCenterY], [bendX, parentCenterY], [bendX, childCenterY], [childEdgeX, childCenterY]],
-          start: { x: parentEdgeX, y: parentCenterY, dir: endDir },
+          points: [[parentCenterX, parentBottomY], [parentCenterX, childCenterY], [childEdgeX, childCenterY]],
+          start: { x: parentCenterX, y: parentBottomY, dir: [0, 1] },
           end: { x: childEdgeX, y: childCenterY, dir: endDir }
         };
       }
 
       if (childNode.inColumn) {
-        const spineX = p.x + LAYOUT_COLUMN_SPINE_INSET;
+        const spineX = childNode.branchSide === 'left'
+          ? p.x + p.w - LAYOUT_COLUMN_SPINE_INSET
+          : p.x + LAYOUT_COLUMN_SPINE_INSET;
         const fromLeft = childCenterX >= spineX;
         const childEdgeX = fromLeft ? c.x : c.x + c.w;
         return {
@@ -3918,6 +3974,16 @@
       const y1 = parentBottomY;
       const x2 = childCenterX;
       const y2 = c.y;
+      // Ramo de assessoria em linha: a caixa que está logo abaixo da superior
+      // recebe a linha reta, sem o pequeno degrau que a diferença de largura
+      // entre as duas caixas causaria.
+      if (childNode.inBranch && y2 > y1 && x1 > c.x + LAYOUT_ROUTE_STUB && x1 < c.x + c.w - LAYOUT_ROUTE_STUB) {
+        return {
+          points: [[x1, y1], [x1, y2]],
+          start: { x: x1, y: y1, dir: [0, 1] },
+          end: { x: x1, y: y2, dir: [0, 1] }
+        };
+      }
       let bendY = y1 + LAYOUT_CONNECTOR_BEND_GAP;
       if (staffBottom !== undefined) {
         const belowStaff = staffBottom + LAYOUT_CONNECTOR_BEND_GAP;
@@ -4187,7 +4253,22 @@
       return result;
     }
 
+    // Ids de todas as unidades que estão em ramos de assessoria: as
+    // assessorias e tudo o que está abaixo delas.
+    function getStaffBranchIds() {
+      const ids = new Set();
+      function walkBranch(node, inBranch) {
+        const inside = inBranch || node.type === 'assessoria';
+        if (inside) ids.add(node.id);
+        (node.children || []).forEach(c => walkBranch(c, inside));
+      }
+      // A unidade do topo nunca é desenhada como assessoria.
+      (orgTree?.children || []).forEach(c => walkBranch(c, false));
+      return ids;
+    }
+
     function startLayoutDrag(e, nodeId) {
+      if (layoutCropActive) return;
       if (e.button !== undefined && e.button !== 0) return;
       e.preventDefault();
       e.stopPropagation();
@@ -4313,6 +4394,7 @@
       const COLUMN_INDENT = 26;  // da espinha até a borda das caixas da coluna
       const COLUMN_TOP_GAP = 14; // do pai (ou das assessorias) até o 1º item
       const COLUMN_GAP = 16;     // entre itens da coluna
+      const BRANCH_ROW_GAP_Y = 44; // ramo de assessoria em linha: da caixa até a fileira
 
       const byId = {};
       layoutNodesFlat.forEach(n => { byId[n.id] = n; });
@@ -4323,6 +4405,71 @@
         const dataNode = findNodeById(orgTree, n.id);
         childrenOf[n.id] = (dataNode?.children || []).map(c => byId[c.id]).filter(Boolean);
       });
+
+      // Ramo de assessoria (a assessoria e tudo o que está abaixo dela): cada
+      // caixa põe as subordinadas em coluna (recuadas, abaixo dela) ou em
+      // linha (lado a lado), conforme o botão da caixa, sempre crescendo para
+      // o lado de fora. As posições vêm como distância (u) da borda interna
+      // da caixa do topo do ramo — a borda voltada para a linha central.
+      function layoutBranch(nodeId, side) {
+        const node = byId[nodeId];
+        const kids = childrenOf[nodeId] || [];
+        const boxes = {};
+        boxes[node.id] = { u: 0, y: 0 };
+        let width = node.w, height = node.h;
+        const place = (sub, du, dy) => {
+          Object.entries(sub.boxes).forEach(([id, b]) => { boxes[id] = { u: b.u + du, y: b.y + dy }; });
+        };
+        if (kids.length) {
+          const subs = kids.map(k => layoutBranch(k.id, side));
+          if (node.orient === 'h') {
+            // A fileira é lida da esquerda para a direita nos dois lados; num
+            // ramo à esquerda, a última fica embaixo da caixa superior.
+            const rowY = node.h + BRANCH_ROW_GAP_Y;
+            let u = 0, rowHeight = 0;
+            (side === 'left' ? [...subs].reverse() : subs).forEach((sub, i) => {
+              if (i > 0) u += GAP_X;
+              place(sub, u, rowY);
+              u += sub.width;
+              rowHeight = Math.max(rowHeight, sub.height);
+            });
+            width = Math.max(width, u);
+            height = rowY + rowHeight;
+          } else {
+            const indent = LAYOUT_COLUMN_SPINE_INSET + COLUMN_INDENT;
+            let y = node.h + COLUMN_TOP_GAP;
+            subs.forEach((sub, i) => {
+              if (i > 0) y += COLUMN_GAP;
+              place(sub, indent, y);
+              width = Math.max(width, indent + sub.width);
+              y += sub.height;
+            });
+            height = y;
+          }
+        }
+        return { boxes, width, height };
+      }
+
+      // Converte o ramo para o formato de layoutSubtree (eixo x = 0 no
+      // centro da caixa do topo), para o lado em que ele fica.
+      function layoutStaffBranch(nodeId, side) {
+        const node = byId[nodeId];
+        const branch = layoutBranch(nodeId, side);
+        const positions = {};
+        Object.entries(branch.boxes).forEach(([id, b]) => {
+          positions[id] = {
+            x: side === 'right' ? b.u - node.w / 2 : node.w / 2 - b.u - byId[id].w,
+            y: b.y
+          };
+        });
+        const inner = node.w / 2, outer = branch.width - node.w / 2;
+        return {
+          positions,
+          left: side === 'right' ? inner : outer,
+          right: side === 'right' ? outer : inner,
+          height: branch.height
+        };
+      }
 
       // Retorna as posições relativas a um eixo central x = 0 (linha central
       // do nó) e y = 0 (topo do nó), mais quanto a subárvore ocupa à esquerda
@@ -4347,8 +4494,8 @@
         const staffStep = asColumn ? 1 : 2;
         for (let i = 0; i < staffChildren.length; i += staffStep) {
           const pair = [
-            { sub: layoutSubtree(staffChildren[i].id), side: 'right' },
-            !asColumn && staffChildren[i + 1] ? { sub: layoutSubtree(staffChildren[i + 1].id), side: 'left' } : null
+            { sub: layoutStaffBranch(staffChildren[i].id, 'right'), side: 'right' },
+            !asColumn && staffChildren[i + 1] ? { sub: layoutStaffBranch(staffChildren[i + 1].id, 'left'), side: 'left' } : null
           ].filter(Boolean);
           let rowHeight = 0;
           pair.forEach(({ sub, side }) => {
@@ -4447,26 +4594,150 @@
       queueCloudSave(currentChartId);
     }
 
+    /* "Imprimir seleção" da tela "Ajustar Layout": mesmo uso da tela
+       principal — arrasta-se um retângulo sobre o desenho, as caixas tocadas
+       entram por inteiro e a área sai impressa em tamanho exato, numa folha
+       sob medida. Aqui o recorte usa as posições ajustadas. */
+    function layoutPointFromEvent(e) {
+      const rect = document.getElementById('layout-canvas').getBoundingClientRect();
+      const z = layoutZoomLevel || 1;
+      return {
+        x: (e.clientX - rect.left) / z + layoutCanvasOrigin.x,
+        y: (e.clientY - rect.top) / z + layoutCanvasOrigin.y
+      };
+    }
+
+    function positionLayoutCropBox(rect = layoutCropRect) {
+      const box = document.getElementById('layout-crop-box');
+      if (!box) return;
+      if (!layoutCropActive || !rect) { box.style.display = 'none'; return; }
+      box.style.display = 'block';
+      box.style.left = `${rect.x - layoutCanvasOrigin.x}px`;
+      box.style.top = `${rect.y - layoutCanvasOrigin.y}px`;
+      box.style.width = `${rect.w}px`;
+      box.style.height = `${rect.h}px`;
+    }
+
+    function setupLayoutCropSelection() {
+      const viewport = document.getElementById('layout-canvas-viewport');
+      if (!viewport) return;
+      const rectFromDrag = (e) => {
+        const pt = layoutPointFromEvent(e);
+        return {
+          x: Math.min(layoutCropDragStart.x, pt.x),
+          y: Math.min(layoutCropDragStart.y, pt.y),
+          w: Math.abs(pt.x - layoutCropDragStart.x),
+          h: Math.abs(pt.y - layoutCropDragStart.y)
+        };
+      };
+
+      viewport.addEventListener('mousedown', (e) => {
+        if (!layoutCropActive) return;
+        // Os controles da tela (zoom, camadas, botões do recorte) continuam funcionando.
+        if (e.button !== 0 || e.target.closest('#layout-crop-toolbar') || e.target.closest('button:not(.layout-orient-btn)')) return;
+        e.preventDefault();
+        e.stopPropagation();
+        layoutCropDragStart = layoutPointFromEvent(e);
+        layoutCropRect = null;
+        positionLayoutCropBox({ ...layoutCropDragStart, w: 0, h: 0 });
+        document.getElementById('layout-crop-confirm-btn').disabled = true;
+      }, true);
+
+      window.addEventListener('mousemove', (e) => {
+        if (!layoutCropActive || !layoutCropDragStart) return;
+        positionLayoutCropBox(rectFromDrag(e));
+      }, true);
+
+      window.addEventListener('mouseup', (e) => {
+        if (!layoutCropActive || !layoutCropDragStart) return;
+        const sel = rectFromDrag(e);
+        layoutCropDragStart = null;
+        const z = layoutZoomLevel || 1;
+        if (sel.w * z < 12 || sel.h * z < 12) {
+          layoutCropRect = null;
+          positionLayoutCropBox();
+          document.getElementById('layout-crop-confirm-btn').disabled = true;
+          return;
+        }
+
+        // Expande a seleção até os limites das caixas tocadas, para que
+        // nomes e siglas não saiam cortados.
+        let left = sel.x, top = sel.y, right = sel.x + sel.w, bottom = sel.y + sel.h;
+        const touched = layoutNodesFlat.map(getLayoutPosition).filter(p =>
+          p.x + p.w >= sel.x && p.x <= sel.x + sel.w && p.y + p.h >= sel.y && p.y <= sel.y + sel.h
+        );
+        const pad = 14;
+        touched.forEach(p => {
+          left = Math.min(left, p.x - pad);
+          top = Math.min(top, p.y - pad);
+          right = Math.max(right, p.x + p.w + pad);
+          bottom = Math.max(bottom, p.y + p.h + pad);
+        });
+
+        layoutCropRect = { x: left, y: top, w: right - left, h: bottom - top };
+        positionLayoutCropBox();
+        document.getElementById('layout-crop-confirm-btn').disabled = false;
+        document.getElementById('layout-crop-help').innerText = 'Recorte definido. Arraste novamente para substituir ou clique em “Imprimir seleção”.';
+      }, true);
+    }
+
+    function startLayoutCropMode() {
+      if (!layoutNodesFlat.length) return;
+      layoutCropActive = true;
+      layoutCropDragStart = null;
+      layoutCropRect = null;
+      document.getElementById('layout-canvas-viewport').classList.add('crop-selection-active');
+      positionLayoutCropBox();
+      document.getElementById('layout-crop-toolbar').style.display = 'block';
+      document.getElementById('layout-crop-confirm-btn').disabled = true;
+      document.getElementById('layout-crop-help').innerText = 'Arraste sobre o organograma. Caixas tocadas pela seleção serão incluídas por inteiro.';
+      showToast('Arraste sobre o organograma para definir o recorte.', 'info');
+    }
+
+    function cancelLayoutCropMode() {
+      layoutCropActive = false;
+      layoutCropDragStart = null;
+      layoutCropRect = null;
+      document.getElementById('layout-canvas-viewport')?.classList.remove('crop-selection-active');
+      positionLayoutCropBox();
+      const toolbar = document.getElementById('layout-crop-toolbar');
+      if (toolbar) toolbar.style.display = 'none';
+    }
+
+    function confirmLayoutCropPrint() {
+      if (!layoutCropRect) { showToast('Selecione uma área do organograma primeiro.', 'error'); return; }
+      const crop = { ...layoutCropRect };
+      cancelLayoutCropMode();
+      triggerLayoutPrint(crop);
+    }
+
     // Gera um PDF com o layout ajustado (posições manuais), em página única
     // sob medida — mesmo espírito do "Gerar PDF > Organograma" da tela
     // principal: sem se prender a A4, em alta resolução para dar zoom.
-    function triggerLayoutPrint() {
+    // Com crop ({ x, y, w, h }, em coordenadas do desenho), imprime só essa
+    // área ("Imprimir seleção"), também em tamanho exato.
+    function triggerLayoutPrint(crop = null) {
       if (!currentChartId || !layoutNodesFlat.length) { showToast('Nada para imprimir.', 'error'); return; }
       const host = document.getElementById('layout-print-page');
       if (!host) return;
       host.innerHTML = '';
 
-      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-      layoutNodesFlat.forEach(n => {
-        const p = getLayoutPosition(n);
-        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
-        maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
-      });
-      const pad = 24;
-      const originX = minX - pad;
-      const originY = minY - pad;
-      const width = maxX - originX + pad;
-      const height = maxY - originY + pad;
+      let originX, originY, width, height;
+      if (crop) {
+        ({ x: originX, y: originY, w: width, h: height } = crop);
+      } else {
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        layoutNodesFlat.forEach(n => {
+          const p = getLayoutPosition(n);
+          minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+          maxX = Math.max(maxX, p.x + p.w); maxY = Math.max(maxY, p.y + p.h);
+        });
+        const pad = 24;
+        originX = minX - pad;
+        originY = minY - pad;
+        width = maxX - originX + pad;
+        height = maxY - originY + pad;
+      }
 
       const chart = chartsData[currentChartId];
       const standardHeader = document.getElementById('print-header');
@@ -4481,7 +4752,7 @@
         <img alt="Logo Esquerda" src="${sourceLogos[0]?.src || ''}">
         <div class="optimized-page-header-center">
           <div class="optimized-page-title">${escapeHtml(chart?.name || 'Organograma')}</div>
-          <div class="optimized-page-subtitle">${escapeHtml(chart?.subtitle || '')}${chart?.subtitle ? ' · ' : ''}Layout ajustado</div>
+          <div class="optimized-page-subtitle">${escapeHtml(chart?.subtitle || '')}${chart?.subtitle ? ' · ' : ''}${crop ? 'Recorte selecionado' : 'Layout ajustado'}</div>
         </div>
         <img alt="Logo Direita" src="${sourceLogos[1]?.src || ''}">
       `;
@@ -4511,6 +4782,9 @@
 
       layoutNodesFlat.forEach(n => {
         const pos = getLayoutPosition(n);
+        // No recorte, caixas totalmente fora da área ficam de fora (uma
+        // caixa posicionada abaixo da folha criaria uma página em branco).
+        if (pos.x >= originX + width || pos.x + pos.w <= originX || pos.y >= originY + height || pos.y + pos.h <= originY) return;
         const el = document.createElement('div');
         const typeClasses = n.type === 'assessoria'
           ? 'border-l-[5px] border-purple-500 rounded-lg'
@@ -4683,12 +4957,13 @@
       const safeSigla = escapeHtml(node.sigla || '');
       const sideBorder = side === 'left' ? 'border-r-[5px]' : 'border-l-[5px]';
 
+      const orient = getStaffBranchOrientation(node);
       const childHtml = (!isCollapsed && children.length)
-        ? renderStaffDescendantsHtml(children, depth + 1, side)
+        ? renderStaffDescendantsHtml(children, depth + 1, side, orient)
         : '';
 
       return `
-        <div id="card-${node.id}"
+        <div id="card-${node.id}"${orient ? ` data-orient="${orient}"` : ''}
              draggable="true" ondragstart="handleDragStart(event, '${node.id}')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${node.id}')"
              onclick="selectNode('${node.id}', event)"
              onmouseenter="showUnitTooltip(event, '${node.id}')" onmousemove="moveUnitTooltip(event)" onmouseleave="hideUnitTooltip()"
@@ -4717,8 +4992,16 @@
 
     /* Todos os descendentes de uma assessoria permanecem no lado da assessoria-mãe.
        Não usamos <ul>/<li> aqui, evitando os conectores automáticos da árvore principal. */
-    function renderStaffDescendantsHtml(children, depth, side) {
+    function renderStaffDescendantsHtml(children, depth, side, orient = null) {
       if (!children || !children.length) return '';
+      // Tela "Ajustar Layout": coluna ou linha, conforme a escolha da caixa.
+      if (orient) {
+        return `
+          <div class="lsd lsd-${side} ${orient === 'h' ? 'lsd-row' : 'lsd-col'}">
+            ${children.map(child => renderStaffDescendantItemHtml(child, depth, side, true)).join('')}
+          </div>
+        `;
+      }
       return `
         <div class="staff-descendants staff-descendants-${side}">
           ${children.map(child => renderStaffDescendantItemHtml(child, depth, side)).join('')}
@@ -4726,7 +5009,7 @@
       `;
     }
 
-    function renderStaffDescendantItemHtml(node, depth, side) {
+    function renderStaffDescendantItemHtml(node, depth, side, forLayout = false) {
       const isSelected = node.id === selectedNodeId;
       const isCollapsed = collapsedNodes.has(node.id);
       const children = node.children || [];
@@ -4747,13 +5030,14 @@
         ? `${side === 'left' ? 'border-r-[5px]' : 'border-l-[5px]'} border-purple-500 border-y border-slate-200`
         : 'border-t-[5px] border-blue-600 border-x border-b border-slate-200';
 
+      const orient = getStaffBranchOrientation(node);
       const nestedHtml = (!isCollapsed && children.length)
-        ? renderStaffDescendantsHtml(children, depth + 1, side)
+        ? renderStaffDescendantsHtml(children, depth + 1, side, orient)
         : '';
 
       return `
-        <div class="staff-descendant-item">
-          <div id="card-${node.id}"
+        <div class="${forLayout ? 'lsd-item' : 'staff-descendant-item'}">
+          <div id="card-${node.id}"${orient ? ` data-orient="${orient}"` : ''}
                draggable="true" ondragstart="handleDragStart(event, '${node.id}')" ondragover="handleDragOver(event)" ondragleave="handleDragLeave(event)" ondrop="handleDrop(event, '${node.id}')"
                onclick="selectNode('${node.id}', event)"
                onmouseenter="showUnitTooltip(event, '${node.id}')" onmousemove="moveUnitTooltip(event)" onmouseleave="hideUnitTooltip()"
@@ -4923,6 +5207,16 @@
         ? override === 'v'
         : (lastLayerMode >= 1 && terminal) || (lastLayerMode === 2 && penultimate);
       return { vertical, eligible: true };
+    }
+
+    // Ramo de assessoria (a assessoria e tudo o que está abaixo dela) na tela
+    // "Ajustar Layout": toda caixa com subordinadas visíveis escolhe se elas
+    // ficam em coluna ('v', o padrão) ou em linha ('h'). Na tela principal
+    // retorna null e o ramo segue o desenho lateral de sempre.
+    function getStaffBranchOrientation(node) {
+      if (!layoutOrientationOverrides) return null;
+      if (!(node.children && node.children.length) || collapsedNodes.has(node.id)) return null;
+      return layoutOrientationOverrides[node.id] === 'h' ? 'h' : 'v';
     }
 
     function getChartLastLayerMode(chart) {
